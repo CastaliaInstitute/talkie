@@ -1,10 +1,12 @@
 # talkie
 
-Inference library for the talkie 13B language model family.
+`talkie` is an inference library for the talkie 13B language model family.
 
-`talkie-1930-13b-base` is a 13b language model trained on pre-1931 English-language text. `talkie-1930-13b-it` has been instruction-tuned using a novel instruction-following dataset built from pre-1931 reference works including etiquette manuals, letter-writing manuals, encyclopedias, and poetry collections. It has also undergone reinforcement learning using online DPO to improve instruction-following capabilities. 
+`talkie-1930-13b-base` is a 13b language model trained on pre-1931 English-language text. ]
 
-We also provide a 'modern' base model with the same architecture and training FLOPs as `talkie-1930`, but trained on FineWeb, to allow for controlled comparisons between modern and vintage models. Note that we need to be careful about the claims we make about behavioral and capabilities differences, because temporal coverage is not the only difference in the pretraining corpora. For example, the distribution of subject matters differs significantly. 
+`talkie-1930-13b-it` has been instruction-tuned using a novel instruction-following dataset built from pre-1931 reference works including etiquette manuals, letter-writing manuals, encyclopedias, and poetry collections. It has also undergone reinforcement learning using online DPO to improve instruction-following capabilities. 
+
+We also provide a 'modern' base model, `talkie-web-13b-base`, with the same architecture and training FLOPs as `talkie-1930`, but trained on FineWeb, to allow for controlled comparisons between modern and vintage models. Note that we need to be careful about the claims we make contrasting the behavior and capabilities of the models, because temporal coverage is not the only difference in the pretraining corpora. For example, the distribution of subject matters differs significantly. 
 
 See our [blog post](https://talkie-lm.com/) for details.
 
@@ -44,11 +46,11 @@ from talkie import Talkie
 model = Talkie("talkie-1930-13b-base")
 
 # Generate a completion
-result = model.generate("The year was 1929, and", temperature=0.8, max_tokens=200)
+result = model.generate("If scientists discover life on other planets,", temperature=0.7, max_tokens=300)
 print(result.text)
 
 # Stream tokens
-for token in model.stream("In the beginning there was"):
+for token in model.stream("The effects of the automobile on public morality have"):
     print(token, end="", flush=True)
 ```
 
@@ -60,7 +62,7 @@ from talkie import Talkie, Message
 model = Talkie("talkie-1930-13b-it")
 
 # Single-turn
-result = model.generate("Tell me about the 1920s", max_tokens=300)
+result = model.generate("Write an essay predicting what life will be like in the year 1960.", max_tokens=600)
 print(result.text)
 
 # Multi-turn chat
@@ -72,7 +74,7 @@ print(result.text)
 
 # Stream a chat reply
 messages.append(Message(role="assistant", content=result.text))
-messages.append(Message(role="user", content="What about the music?"))
+messages.append(Message(role="user", content="Which of those causes was the most significant?"))
 for token in model.chat_stream(messages):
     print(token, end="", flush=True)
 ```
