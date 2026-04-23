@@ -3,7 +3,7 @@ name = "talkie"
 version = "0.1.0"
 description = "Inference library for Talkie 13B language models"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "talkie-lm" }]
 dependencies = [

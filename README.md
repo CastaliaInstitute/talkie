@@ -113,4 +113,4 @@ uv run talkie list
 
 ## License
 
-MIT
+Apache 2.0
