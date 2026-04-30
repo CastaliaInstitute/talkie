@@ -111,6 +111,10 @@ uv run talkie download all
 uv run talkie list
 ```
 
+## Castalia Institute fork
+
+Canonical upstream remains [talkie-lm/talkie](https://github.com/talkie-lm/talkie). This fork adds a **small Cloud Run–friendly web app** (`web/`) that only serves a landing page and `/health`. It does **not** run model inference (that still requires a suitable GPU locally). Deployment notes: [`deploy/README.md`](deploy/README.md).
+
 ## License
 
 Apache 2.0
