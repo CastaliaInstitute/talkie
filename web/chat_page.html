@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Talkie · Castalia Institute</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --paper: #e8e0d0;
+      --paper-deep: #ddd3bf;
+      --ink: #241c14;
+      --ink-soft: #4a4036;
+      --rule: #8a775f;
+      --rule-light: rgba(138, 119, 95, 0.35);
+      --seal: #5c2f28;
+      --shadow: rgba(36, 28, 20, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-size: 17px;
+      line-height: 1.55;
+      color: var(--ink);
+      background: linear-gradient(165deg, var(--paper-deep) 0%, var(--paper) 42%, #ebe5d8 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.25rem 0.75rem 2rem;
+    }
+    .sheet {
+      width: 100%;
+      max-width: 38rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f3eee4;
+      border: 1px solid var(--rule-light);
+      box-shadow: 0 4px 24px var(--shadow), 0 1px 0 rgba(255,255,255,0.6) inset;
+      padding: 0;
+      min-height: min(88vh, 640px);
+    }
+    .masthead {
+      text-align: center;
+      padding: 1.35rem 1.25rem 1rem;
+      border-bottom: double 3px var(--rule);
+      background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, transparent 100%);
+    }
+    .masthead h1 {
+      font-family: "IM Fell English", "Libre Baskerville", serif;
+      font-weight: 400;
+      font-size: clamp(1.85rem, 5vw, 2.35rem);
+      letter-spacing: 0.02em;
+      margin: 0 0 0.35rem;
+      color: var(--ink);
+    }
+    .masthead .sub {
+      font-family: "IM Fell English", serif;
+      font-style: italic;
+      font-size: 0.95rem;
+      color: var(--ink-soft);
+      margin: 0;
+    }
+    .masthead .rule-year {
+      font-size: 0.72rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--rule);
+      margin-top: 0.65rem;
+    }
+    .correspondence {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 1.25rem 0.5rem;
+      scroll-behavior: smooth;
+    }
+    .turn {
+      margin-bottom: 1.15rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px dotted var(--rule-light);
+    }
+    .turn:last-child { border-bottom: none; }
+    .turn .label {
+      font-family: "IM Fell English", serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--rule);
+      margin-bottom: 0.35rem;
+    }
+    .turn.user .label { color: var(--seal); }
+    .turn.assistant .body {
+      text-indent: 1.25em;
+    }
+    .turn .body {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--ink);
+    }
+    .turn.pending .body {
+      font-style: italic;
+      color: var(--ink-soft);
+      text-indent: 0;
+    }
+    .composer {
+      border-top: double 3px var(--rule);
+      padding: 1rem 1.25rem 1.25rem;
+      background: rgba(255,255,255,0.25);
+    }
+    .composer label {
+      display: block;
+      font-family: "IM Fell English", serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--rule);
+      margin-bottom: 0.45rem;
+    }
+    textarea {
+      width: 100%;
+      min-height: 5.5rem;
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-size: 16px;
+      line-height: 1.5;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--rule-light);
+      border-radius: 2px;
+      background: #faf8f3;
+      color: var(--ink);
+      resize: vertical;
+      margin-bottom: 0.65rem;
+    }
+    textarea:focus {
+      outline: 2px solid var(--rule);
+      outline-offset: 1px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    button.send {
+      font-family: "IM Fell English", serif;
+      font-size: 0.95rem;
+      letter-spacing: 0.06em;
+      padding: 0.55rem 1.35rem;
+      background: var(--ink);
+      color: var(--paper);
+      border: 1px solid var(--ink);
+      cursor: pointer;
+      border-radius: 2px;
+      box-shadow: 0 2px 0 var(--rule-light);
+    }
+    button.send:hover:not(:disabled) {
+      background: var(--seal);
+      border-color: var(--seal);
+    }
+    button.send:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .footnote {
+      font-size: 0.68rem;
+      color: var(--ink-soft);
+      max-width: 38rem;
+      margin-top: 1rem;
+      text-align: center;
+      line-height: 1.45;
+    }
+    .footnote a {
+      color: var(--seal);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .err-banner {
+      display: none;
+      margin: 0 1.25rem;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.85rem;
+      font-style: italic;
+      color: var(--seal);
+      border: 1px dashed var(--rule);
+      background: rgba(92, 47, 40, 0.06);
+    }
+    .err-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="sheet" role="application" aria-label="Talkie correspondence">
+    <header class="masthead">
+      <h1>Talkie</h1>
+      <p class="sub">A civil parlour for discourse</p>
+      <p class="rule-year">Circa MCMXXXI · Castalia Institute</p>
+    </header>
+    <div id="err" class="err-banner" role="alert"></div>
+    <div id="log" class="correspondence" aria-live="polite"></div>
+    <div class="composer">
+      <label for="msg">Your dispatch</label>
+      <textarea id="msg" placeholder="Compose your message in the manner of the early twentieth century…" rows="4"></textarea>
+      <div class="actions">
+        <button type="button" class="send" id="btn">Seal &amp; send</button>
+      </div>
+    </div>
+  </div>
+  <p class="footnote">
+    Instrument: vintage language models ·
+    <a href="{{FORK}}" rel="noopener">our manuscript</a> ·
+    <a href="{{UPSTREAM}}" rel="noopener">provenance</a>
+  </p>
+  <script>
+(function () {
+  const log = document.getElementById('log');
+  const msg = document.getElementById('msg');
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('err');
+  const messages = [];
+
+  function showErr(t) {
+    err.textContent = t;
+    err.classList.add('visible');
+  }
+  function clearErr() {
+    err.textContent = '';
+    err.classList.remove('visible');
+  }
+
+  function appendTurn(role, text, pending) {
+    const wrap = document.createElement('div');
+    wrap.className = 'turn ' + role + (pending ? ' pending' : '');
+    const lab = document.createElement('div');
+    lab.className = 'label';
+    lab.textContent = role === 'user' ? 'From your desk' : 'From the instrument';
+    const body = document.createElement('p');
+    body.className = 'body';
+    body.textContent = text;
+    wrap.appendChild(lab);
+    wrap.appendChild(body);
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+    return wrap;
+  }
+
+  async function send() {
+    const text = msg.value.trim();
+    if (!text) return;
+    clearErr();
+    btn.disabled = true;
+    msg.disabled = true;
+
+    messages.push({ role: 'user', content: text });
+    appendTurn('user', text, false);
+    msg.value = '';
+
+    const pendingEl = appendTurn('assistant', 'The wires warm; awaiting a reply…', true);
+
+    try {
+      const res = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'talkie-1930-13b-it',
+          messages: messages,
+          max_tokens: 512,
+          temperature: 0.78
+        })
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        var detail = (data.detail || data.error || data.message);
+        if (typeof detail === 'object' && detail !== null && detail.message)
+          detail = detail.message;
+        throw new Error(typeof detail === 'string' ? detail : ('The exchange declined (' + res.status + ').'));
+      }
+      var reply = (((data.choices || [])[0] || {}).message || {}).content;
+      if (!reply || !String(reply).trim())
+        throw new Error('The instrument returned an empty page.');
+      reply = String(reply).trim();
+      messages.push({ role: 'assistant', content: reply });
+      pendingEl.classList.remove('pending');
+      pendingEl.querySelector('.body').textContent = reply;
+    } catch (e) {
+      pendingEl.remove();
+      showErr(e.message || 'A fault on the line.');
+    } finally {
+      btn.disabled = false;
+      msg.disabled = false;
+      msg.focus();
+    }
+  }
+
+  btn.addEventListener('click', send);
+  msg.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      send();
+    }
+  });
+})();
+  </script>
+</body>
+</html>

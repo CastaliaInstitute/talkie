@@ -59,3 +59,25 @@ After DNS propagates, Google will finish TLS certificate provisioning (often 15�
 ## Public access (`403` from `*.run.app`)
 
 If `gcloud run deploy --allow-unauthenticated` completes but the service URL returns **403**, an **organization policy** may block `allUsers` as Cloud Run invoker. An org admin must allow public invokers for this project (or grant `roles/run.invoker` to specific principals). Until then, use an identity that has invoke permission.
+
+## Chat UI → GPU inference
+
+The `web/` service serves a **circa-1931** chat page at `/` and proxies `POST /v1/chat/completions` to a GPU backend.
+
+Set on **`talkie-web`** (CPU):
+
+| Env | Meaning |
+|-----|---------|
+| `TALKIE_UPSTREAM_URL` | Base URL of GPU Cloud Run (e.g. `https://talkie-gpu-xxxxx.europe-west4.run.app`) — **no** trailing slash |
+| `TALKIE_UPSTREAM_BEARER` | Optional static bearer if identity tokens are not used |
+
+If both are unset / auth fails, the UI loads but sends show a **503** explaining the wire is down.
+
+On GCP without `TALKIE_UPSTREAM_BEARER`, the service uses **`fetch_id_token`** to call the GPU URL; grant **this service’s runtime service account** the **`roles/run.invoker`** role on the GPU service.
+
+Docker rebuild picks up `chat_page.html`; redeploy after edits:
+
+```bash
+gcloud run deploy talkie-web --source . --region "$REGION" \
+  --set-env-vars "TALKIE_UPSTREAM_URL=https://YOUR_GPU_SERVICE_URL"
+```
