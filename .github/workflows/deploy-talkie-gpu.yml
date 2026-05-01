@@ -28,7 +28,23 @@ jobs:
 
       - name: Build GPU image (Cloud Build)
         run: |
-          gcloud builds submit --config cloudbuild.gpu.yaml --project institute-481516 .
+          set -e
+          # --async + poll: WIF deploy SA may lack log streaming; submit still runs remotely.
+          BUILD_ID=$(gcloud builds submit \
+            --config cloudbuild.gpu.yaml \
+            --project institute-481516 . \
+            --async \
+            --format='value(id)')
+          echo "Cloud Build ID: ${BUILD_ID}"
+          while true; do
+            STATUS=$(gcloud builds describe "${BUILD_ID}" --project institute-481516 --format='value(status)')
+            echo "Cloud Build status: ${STATUS}"
+            case "${STATUS}" in
+              SUCCESS) exit 0 ;;
+              FAILURE|CANCELLED|TIMEOUT|INTERNAL_ERROR|FAILED) exit 1 ;;
+              *) sleep 15 ;;
+            esac
+          done
 
       - name: Deploy talkie-gpu
         run: |
