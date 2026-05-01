@@ -8,3 +8,8 @@ build/
 *.ckpt
 .env
 uv.lock
+
+node_modules/
+/test-results/
+/playwright-report/
+/playwright/.cache/
