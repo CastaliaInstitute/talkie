@@ -64,7 +64,15 @@ jobs:
             --project institute-481516 \
             --update-env-vars "TALKIE_UPSTREAM_URL=${GPU_URL}"
 
-      - name: Show GPU URL (optional sync to repo secret for documentation only)
+      - name: Mirror TALKIE_UPSTREAM_URL to repo Actions secret (optional)
+        if: ${{ secrets.GH_ACTIONS_SECRETS_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_SECRETS_TOKEN }}
         run: |
-          echo "GPU service URL (optional: gh secret set TALKIE_UPSTREAM_URL -b\"VALUE\" -R CastaliaInstitute/talkie):"
+          GPU_URL=$(gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)')
+          printf '%s' "$GPU_URL" | gh secret set TALKIE_UPSTREAM_URL --repo "${{ github.repository }}"
+
+      - name: Show GPU URL
+        run: |
+          echo "talkie-gpu URL:"
           gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)'

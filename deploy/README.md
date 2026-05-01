@@ -161,4 +161,6 @@ gcloud run deploy talkie-web --source . --region "$REGION" \
 
 (Or paste the URL manually.)
 
-**GitHub Actions:** the **`Deploy Talkie GPU`** workflow sets **`TALKIE_UPSTREAM_URL` on the Cloud Run service** after a successful GPU deploy, so you often **do not** need a repo secret. Repository secret **`TALKIE_UPSTREAM_URL`** is optional: if set, **`Deploy Cloud Run`** passes **`--update-env-vars`** so redeploys from `main` can override the URL. The default **`GITHUB_TOKEN`** cannot create or update other secrets from a workflow.
+**GitHub Actions:** the **`Deploy Talkie GPU`** workflow sets **`TALKIE_UPSTREAM_URL` on the Cloud Run service** after a successful GPU deploy, so you often **do not** need a repo secret. Repository secret **`TALKIE_UPSTREAM_URL`** is optional: if set, **`Deploy Cloud Run`** passes **`--update-env-vars`** so redeploys from `main` can override the URL. The default **`GITHUB_TOKEN`** cannot create or update other secrets by itself.
+
+**Optional — mirror the URL into a repo Actions secret:** add repository secret **`GH_ACTIONS_SECRETS_TOKEN`**, a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for this repo only, with **Secrets and variables → Actions: Read and write**. After each successful **`Deploy Talkie GPU`** run, the workflow runs `gh secret set TALKIE_UPSTREAM_URL` so **`TALKIE_UPSTREAM_URL`** stays in sync for **`Deploy Cloud Run`**. Omit **`GH_ACTIONS_SECRETS_TOKEN`** if you do not want a PAT in the repository.
