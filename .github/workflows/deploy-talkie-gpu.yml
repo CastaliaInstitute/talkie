@@ -56,6 +56,15 @@ jobs:
             --role=roles/run.invoker \
             --project=institute-481516
 
-      - name: Show service URL (set repo secret TALKIE_UPSTREAM_URL for CPU deploys)
+      - name: Point talkie-web at talkie-gpu (Cloud Run env, not GitHub secrets)
         run: |
+          GPU_URL=$(gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)')
+          gcloud run services update talkie-web \
+            --region us-central1 \
+            --project institute-481516 \
+            --update-env-vars "TALKIE_UPSTREAM_URL=${GPU_URL}"
+
+      - name: Show GPU URL (optional sync to repo secret for documentation only)
+        run: |
+          echo "GPU service URL (optional: gh secret set TALKIE_UPSTREAM_URL -b\"VALUE\" -R CastaliaInstitute/talkie):"
           gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)'

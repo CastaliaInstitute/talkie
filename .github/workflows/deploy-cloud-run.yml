@@ -26,6 +26,9 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # GitHub cannot write repo secrets with the default GITHUB_TOKEN. Optional secret
+      # TALKIE_UPSTREAM_URL overrides Cloud Run env for this deploy; if unset, gcloud keeps
+      # the previous revision's env (e.g. set by Deploy Talkie GPU workflow).
       - name: Deploy talkie-web
         env:
           TALKIE_UPSTREAM_URL: ${{ secrets.TALKIE_UPSTREAM_URL }}
@@ -33,7 +36,7 @@ jobs:
           set -e
           EXTRA_FLAG=()
           if [ -n "${TALKIE_UPSTREAM_URL:-}" ]; then
-            EXTRA_FLAG+=(--set-env-vars="TALKIE_UPSTREAM_URL=${TALKIE_UPSTREAM_URL}")
+            EXTRA_FLAG+=(--update-env-vars="TALKIE_UPSTREAM_URL=${TALKIE_UPSTREAM_URL}")
           fi
           gcloud run deploy talkie-web \
             --source . \

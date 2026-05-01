@@ -159,4 +159,6 @@ gcloud run deploy talkie-web --source . --region "$REGION" \
   --set-env-vars "TALKIE_UPSTREAM_URL=${GPU_URL}"
 ```
 
-(Or paste the URL manually.) **GitHub Actions:** set repository secret `TALKIE_UPSTREAM_URL` to the GPU base URL so the deploy workflow can pass `--set-env-vars` on each **`talkie-web`** rollout.
+(Or paste the URL manually.)
+
+**GitHub Actions:** the **`Deploy Talkie GPU`** workflow sets **`TALKIE_UPSTREAM_URL` on the Cloud Run service** after a successful GPU deploy, so you often **do not** need a repo secret. Repository secret **`TALKIE_UPSTREAM_URL`** is optional: if set, **`Deploy Cloud Run`** passes **`--update-env-vars`** so redeploys from `main` can override the URL. The default **`GITHUB_TOKEN`** cannot create or update other secrets from a workflow.
