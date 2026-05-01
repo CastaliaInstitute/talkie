@@ -1,0 +1,26 @@
+# Real Talkie 13B inference (CUDA). Build from repository root:
+#   docker build -f Dockerfile.gpu -t talkie-gpu .
+#
+# Requires a GPU with enough VRAM for bfloat16 weights (see README).
+# Cloud Run L4 is 24 GB; this project documents ~28 GB — validate on your SKU.
+
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY gpu_server ./gpu_server
+
+RUN pip install --no-cache-dir --upgrade pip hatchling && \
+    pip install --no-cache-dir "huggingface-hub>=0.20" "tiktoken>=0.6" && \
+    pip install --no-cache-dir --no-deps . && \
+    pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32"
+
+ENV PORT=8080
+WORKDIR /app/gpu_server
+
+CMD exec uvicorn main:app --host 0.0.0.0 --port "${PORT}" --workers 1

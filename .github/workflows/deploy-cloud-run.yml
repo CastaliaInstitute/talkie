@@ -27,7 +27,14 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy talkie-web
+        env:
+          TALKIE_UPSTREAM_URL: ${{ secrets.TALKIE_UPSTREAM_URL }}
         run: |
+          set -e
+          EXTRA_FLAG=()
+          if [ -n "${TALKIE_UPSTREAM_URL:-}" ]; then
+            EXTRA_FLAG+=(--set-env-vars="TALKIE_UPSTREAM_URL=${TALKIE_UPSTREAM_URL}")
+          fi
           gcloud run deploy talkie-web \
             --source . \
             --region us-central1 \
@@ -37,4 +44,5 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
-            --concurrency 80
+            --concurrency 80 \
+            "${EXTRA_FLAG[@]}"

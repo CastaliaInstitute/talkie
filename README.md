@@ -113,7 +113,7 @@ uv run talkie list
 
 ## Castalia Institute fork
 
-Canonical upstream remains [talkie-lm/talkie](https://github.com/talkie-lm/talkie). This fork adds a **small Cloud Run–friendly web app** (`web/`) that only serves a landing page and `/health`. It does **not** run model inference (that still requires a suitable GPU locally). Deployment notes: [`deploy/README.md`](deploy/README.md).
+Canonical upstream remains [talkie-lm/talkie](https://github.com/talkie-lm/talkie). This fork adds a **Cloud Run–friendly chat site** (`web/`) and **`gpu_server/`** — a real **`Talkie`** HTTP API (`Dockerfile.gpu`) you can run on CUDA (locally or on Cloud Run GPU) so [`talkie.castalia.institute`](https://talkie.castalia.institute) can proxy **`/v1/chat/completions`** to **the actual Talkie weights**, not a substitute model. Deployment notes: [`deploy/README.md`](deploy/README.md).
 
 ## License
 

@@ -60,24 +60,89 @@ After DNS propagates, Google will finish TLS certificate provisioning (often 15�
 
 If `gcloud run deploy --allow-unauthenticated` completes but the service URL returns **403**, an **organization policy** may block `allUsers` as Cloud Run invoker. An org admin must allow public invokers for this project (or grant `roles/run.invoker` to specific principals). Until then, use an identity that has invoke permission.
 
+## Deploy Talkie GPU API (real weights)
+
+This fork includes **`gpu_server/`**: a FastAPI service that loads **`talkie.generate.Talkie`** and implements **`POST /v1/chat/completions`** in OpenAI shape so the CPU site can proxy to **actual Talkie inference** (no substitute LLM).
+
+Build the image from the **repo root** (not `web/`):
+
+```bash
+docker build -f Dockerfile.gpu -t talkie-gpu .
+```
+
+Run locally (CUDA machine):
+
+```bash
+docker run --gpus all -e PORT=8080 -p 8080:8080 talkie-gpu
+```
+
+The first start downloads weights from Hugging Face into `HF_HOME` (default in container: use `-e HF_HOME=/path/with/space` if you mount a volume).
+
+### VRAM and Cloud Run
+
+The upstream README targets **~28 GiB VRAM** for bfloat16. Cloud Run’s **NVIDIA L4 is 24 GiB** — it may OOM for the full 13B checkpoint; validate on your account or run this API on a larger GPU (GKE, Compute Engine, etc.) and still point `TALKIE_UPSTREAM_URL` at that URL.
+
+### Deploy `talkie-gpu` on Cloud Run (example)
+
+Enable APIs and pick a [GPU region](https://cloud.google.com/run/docs/configuring/services/gpu). Example **`us-central1`** with one L4:
+
+```bash
+export REGION=us-central1
+export PROJECT_ID=$(gcloud config get-value project)
+
+gcloud run deploy talkie-gpu \
+  --source . \
+  --dockerfile Dockerfile.gpu \
+  --region "$REGION" \
+  --project "$PROJECT_ID" \
+  --no-allow-unauthenticated \
+  --gpu 1 \
+  --gpu-type nvidia-l4 \
+  --memory 32Gi \
+  --cpu 8 \
+  --timeout 3600 \
+  --min-instances 0 \
+  --max-instances 1 \
+  --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
+```
+
+If Hugging Face needs a token, create a Secret Manager secret and add e.g. `--set-secrets HF_TOKEN=hf-token:latest` (and set `HUGGING_FACE_HUB_TOKEN` or download auth per HF docs). Increase **`--timeout`** for first-boot model download; consider **`--min-instances 1`** after debugging cold starts.
+
+After deploy, note the service **URL** and grant the **CPU service’s** runtime identity **`roles/run.invoker`** on **`talkie-gpu`**, as below.
+
 ## Chat UI → GPU inference
 
-The `web/` service serves a **circa-1931** chat page at `/` and proxies `POST /v1/chat/completions` to a GPU backend.
+The `web/` service serves a **circa-1931** chat page at `/` and proxies `POST /v1/chat/completions` to **`gpu_server`** (or any compatible OpenAI-shaped GPU backend).
 
 Set on **`talkie-web`** (CPU):
 
 | Env | Meaning |
 |-----|---------|
-| `TALKIE_UPSTREAM_URL` | Base URL of GPU Cloud Run (e.g. `https://talkie-gpu-xxxxx.europe-west4.run.app`) — **no** trailing slash |
+| `TALKIE_UPSTREAM_URL` | Base URL of the Talkie GPU service (e.g. `https://talkie-gpu-xxxxx.us-central1.run.app`) — **no** trailing slash |
 | `TALKIE_UPSTREAM_BEARER` | Optional static bearer if identity tokens are not used |
 
-If both are unset / auth fails, the UI loads but sends show a **503** explaining the wire is down.
+If `TALKIE_UPSTREAM_URL` is unset, the UI loads but chat returns **503** (“apparatus is not yet connected”).
 
-On GCP without `TALKIE_UPSTREAM_BEARER`, the service uses **`fetch_id_token`** to call the GPU URL; grant **this service’s runtime service account** the **`roles/run.invoker`** role on the GPU service.
-
-Docker rebuild picks up `chat_page.html`; redeploy after edits:
+On GCP without `TALKIE_UPSTREAM_BEARER`, the CPU service uses **`fetch_id_token`**; grant **talkie-web’s** runtime service account **`roles/run.invoker`** on **`talkie-gpu`**.
 
 ```bash
-gcloud run deploy talkie-web --source . --region "$REGION" \
-  --set-env-vars "TALKIE_UPSTREAM_URL=https://YOUR_GPU_SERVICE_URL"
+# Replace with your talkie-web service account if customized.
+WEB_SA="584409871588-compute@developer.gserviceaccount.com"
+
+gcloud run services add-iam-policy-binding talkie-gpu \
+  --region "$REGION" \
+  --member "serviceAccount:${WEB_SA}" \
+  --role roles/run.invoker \
+  --project "$PROJECT_ID"
 ```
+
+Then point the web service at the GPU URL (and redeploy the web app from the default **`Dockerfile`**, not `Dockerfile.gpu`):
+
+```bash
+GPU_URL=$(gcloud run services describe talkie-gpu --region "$REGION" --format='value(status.url)')
+
+gcloud run deploy talkie-web --source . --region "$REGION" \
+  --set-env-vars "TALKIE_UPSTREAM_URL=${GPU_URL}"
+```
+
+(Or paste the URL manually.) **GitHub Actions:** set repository secret `TALKIE_UPSTREAM_URL` to the GPU base URL so the deploy workflow can pass `--set-env-vars` on each **`talkie-web`** rollout.

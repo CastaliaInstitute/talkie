@@ -1,0 +1,56 @@
+name: Deploy Talkie GPU (Cloud Run)
+
+# Costly: builds CUDA image and provisions GPU. Run only when deploying inference.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-talkie-gpu
+  cancel-in-progress: true
+
+jobs:
+  deploy-gpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy talkie-gpu
+        run: |
+          gcloud run deploy talkie-gpu \
+            --source . \
+            --dockerfile Dockerfile.gpu \
+            --region us-central1 \
+            --project institute-481516 \
+            --no-allow-unauthenticated \
+            --gpu 1 \
+            --gpu-type nvidia-l4 \
+            --memory 32Gi \
+            --cpu 8 \
+            --timeout 3600 \
+            --min-instances 0 \
+            --max-instances 1 \
+            --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
+
+      - name: Allow talkie-web to invoke talkie-gpu
+        run: |
+          gcloud run services add-iam-policy-binding talkie-gpu \
+            --region=us-central1 \
+            --member=serviceAccount:584409871588-compute@developer.gserviceaccount.com \
+            --role=roles/run.invoker \
+            --project=institute-481516
+
+      - name: Show service URL (set repo secret TALKIE_UPSTREAM_URL for CPU deploys)
+        run: |
+          gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)'
