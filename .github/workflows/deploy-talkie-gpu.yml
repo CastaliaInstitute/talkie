@@ -65,10 +65,13 @@ jobs:
             --update-env-vars "TALKIE_UPSTREAM_URL=${GPU_URL}"
 
       - name: Mirror TALKIE_UPSTREAM_URL to repo Actions secret (optional)
-        if: ${{ secrets.GH_ACTIONS_SECRETS_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_SECRETS_TOKEN }}
         run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "Skipping secret mirror (GH_ACTIONS_SECRETS_TOKEN not set)."
+            exit 0
+          fi
           GPU_URL=$(gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)')
           printf '%s' "$GPU_URL" | gh secret set TALKIE_UPSTREAM_URL --repo "${{ github.repository }}"
 
