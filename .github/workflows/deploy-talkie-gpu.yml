@@ -3,6 +3,11 @@ name: Deploy Talkie GPU (Cloud Run)
 # Costly: builds CUDA image and provisions GPU. Run only when deploying inference.
 on:
   workflow_dispatch:
+    inputs:
+      no_zonal_redundancy:
+        description: Use --no-gpu-zonal-redundancy (only if your project has that GPU quota class)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,13 +52,20 @@ jobs:
           done
 
       - name: Deploy talkie-gpu
+        env:
+          NO_ZONAL_REDUNDANCY: ${{ inputs.no_zonal_redundancy }}
         run: |
+          set -e
+          REDUNDANCY_FLAG=()
+          if [ "${NO_ZONAL_REDUNDANCY}" = "true" ]; then
+            REDUNDANCY_FLAG=(--no-gpu-zonal-redundancy)
+          fi
           gcloud run deploy talkie-gpu \
             --image us-central1-docker.pkg.dev/institute-481516/cloud-run-source-deploy/talkie-gpu:latest \
             --region us-central1 \
             --project institute-481516 \
             --no-allow-unauthenticated \
-            --no-gpu-zonal-redundancy \
+            "${REDUNDANCY_FLAG[@]}" \
             --gpu 1 \
             --gpu-type nvidia-l4 \
             --memory 32Gi \

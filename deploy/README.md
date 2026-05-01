@@ -100,7 +100,6 @@ gcloud run deploy talkie-gpu \
   --region "$REGION" \
   --project "$PROJECT_ID" \
   --no-allow-unauthenticated \
-  --no-gpu-zonal-redundancy \
   --gpu 1 \
   --gpu-type nvidia-l4 \
   --memory 32Gi \
@@ -112,7 +111,7 @@ gcloud run deploy talkie-gpu \
   --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
 ```
 
-`--no-gpu-zonal-redundancy` avoids an extra quota dimension on some accounts; if Google prompts during deploy, choose the option your project’s quota allows.
+`--no-gpu-zonal-redundancy` uses a **different Cloud Run GPU quota bucket**. If **`gcloud run deploy`** fails with *no quota for GPUs **without** zonal redundancy*, **drop** that flag (default in the **Deploy Talkie GPU** GitHub Action). If it fails for *with* zonal redundancy instead, request **GPU quota** for your project: [g.co/cloudrun/gpu-quota](https://g.co/cloudrun/gpu-quota). The workflow **Run workflow** form includes a checkbox to pass `--no-gpu-zonal-redundancy` when your project only has that pool.
 
 **`.dockerignore`:** must **not** exclude `src/`, `pyproject.toml`, or `README.md`, or the GPU image build will fail (`Dockerfile.gpu` copies them).
 
