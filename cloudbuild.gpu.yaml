@@ -1,0 +1,16 @@
+# Build Talkie GPU image (Dockerfile.gpu). Used because `gcloud run deploy --source`
+# uses ./Dockerfile (CPU web). Cloud Build timeout is high for CUDA base + pip.
+timeout: 7200s
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.gpu
+      - -t
+      - us-central1-docker.pkg.dev/institute-481516/cloud-run-source-deploy/talkie-gpu:latest
+      - .
+images:
+  - us-central1-docker.pkg.dev/institute-481516/cloud-run-source-deploy/talkie-gpu:latest
+options:
+  machineType: E2_HIGHCPU_8

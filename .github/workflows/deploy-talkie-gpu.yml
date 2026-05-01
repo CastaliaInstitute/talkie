@@ -26,14 +26,18 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      - name: Build GPU image (Cloud Build)
+        run: |
+          gcloud builds submit --config cloudbuild.gpu.yaml --project institute-481516 .
+
       - name: Deploy talkie-gpu
         run: |
           gcloud run deploy talkie-gpu \
-            --source . \
-            --dockerfile Dockerfile.gpu \
+            --image us-central1-docker.pkg.dev/institute-481516/cloud-run-source-deploy/talkie-gpu:latest \
             --region us-central1 \
             --project institute-481516 \
             --no-allow-unauthenticated \
+            --no-gpu-zonal-redundancy \
             --gpu 1 \
             --gpu-type nvidia-l4 \
             --memory 32Gi \
@@ -41,6 +45,7 @@ jobs:
             --timeout 3600 \
             --min-instances 0 \
             --max-instances 1 \
+            --port 8080 \
             --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
 
       - name: Allow talkie-web to invoke talkie-gpu

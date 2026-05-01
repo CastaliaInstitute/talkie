@@ -84,18 +84,23 @@ The upstream README targets **~28 GiB VRAM** for bfloat16. Cloud Run’s **NVIDI
 
 ### Deploy `talkie-gpu` on Cloud Run (example)
 
-Enable APIs and pick a [GPU region](https://cloud.google.com/run/docs/configuring/services/gpu). Example **`us-central1`** with one L4:
+Enable APIs and pick a [GPU region](https://cloud.google.com/run/docs/configuring/services/gpu). Your project needs [**Cloud Run GPU quota**](https://cloud.google.com/run/docs/configuring/services/gpu); if deploy fails with a quota error, request allocation (see [GPU quota](https://g.co/cloudrun/gpu-quota)).
+
+The root **`Dockerfile`** is the CPU web app. Build the GPU image with **`cloudbuild.gpu.yaml`** (uses **`Dockerfile.gpu`**), then deploy that image:
 
 ```bash
 export REGION=us-central1
 export PROJECT_ID=$(gcloud config get-value project)
+export IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/talkie-gpu:latest"
+
+gcloud builds submit --config cloudbuild.gpu.yaml --project "$PROJECT_ID" .
 
 gcloud run deploy talkie-gpu \
-  --source . \
-  --dockerfile Dockerfile.gpu \
+  --image "$IMAGE" \
   --region "$REGION" \
   --project "$PROJECT_ID" \
   --no-allow-unauthenticated \
+  --no-gpu-zonal-redundancy \
   --gpu 1 \
   --gpu-type nvidia-l4 \
   --memory 32Gi \
@@ -103,8 +108,13 @@ gcloud run deploy talkie-gpu \
   --timeout 3600 \
   --min-instances 0 \
   --max-instances 1 \
+  --port 8080 \
   --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
 ```
+
+`--no-gpu-zonal-redundancy` avoids an extra quota dimension on some accounts; if Google prompts during deploy, choose the option your project’s quota allows.
+
+**`.dockerignore`:** must **not** exclude `src/`, `pyproject.toml`, or `README.md`, or the GPU image build will fail (`Dockerfile.gpu` copies them).
 
 If Hugging Face needs a token, create a Secret Manager secret and add e.g. `--set-secrets HF_TOKEN=hf-token:latest` (and set `HUGGING_FACE_HUB_TOKEN` or download auth per HF docs). Increase **`--timeout`** for first-boot model download; consider **`--min-instances 1`** after debugging cold starts.
 

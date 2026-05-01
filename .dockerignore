@@ -1,10 +1,12 @@
+# Keep context small; do not list `src/`, `pyproject.toml`, or `*.md` — the GPU
+# image (`Dockerfile.gpu`) needs them. The CPU image only COPYs `web/` anyway.
+
 .git
 .github
 assets
-src
-*.md
-LICENSE
-pyproject.toml
 .hypothesis
 .pytest_cache
 __pycache__
+node_modules
+test-results
+playwright-report
