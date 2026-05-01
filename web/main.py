@@ -17,7 +17,7 @@ UPSTREAM = "https://github.com/talkie-lm/talkie"
 FORK = "https://github.com/CastaliaInstitute/talkie"
 BLOG = "https://talkie-lm.com/"
 
-app = FastAPI(title="Talkie (Castalia)", version="0.2.1")
+app = FastAPI(title="Talkie (Castalia)", version="0.2.2")
 
 # Avoid 405 on OPTIONS (CORS preflight) when the page is loaded cross-origin or probes send OPTIONS.
 app.add_middleware(
@@ -28,20 +28,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_CHAT_HTML: str | None = None
+_BASE_HTML: str | None = None
+
+
+def _sanitize_rate_env(name: str) -> str:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return "0"
+    try:
+        float(raw)
+    except ValueError:
+        return "0"
+    return raw
 
 
 def _chat_html() -> str:
-    global _CHAT_HTML
-    if _CHAT_HTML is None:
+    global _BASE_HTML
+    if _BASE_HTML is None:
         raw = (Path(__file__).resolve().parent / "chat_page.html").read_text(encoding="utf-8")
-        _CHAT_HTML = (
+        _BASE_HTML = (
             raw.replace("{{FORK}}", FORK)
             .replace("{{UPSTREAM}}", UPSTREAM)
             .replace("{{BLOG}}", BLOG)
             .replace("__TALKIE_CHAT_API_BASE__", "")
         )
-    return _CHAT_HTML
+    return (
+        _BASE_HTML.replace("{{TALKIE_COST_INPUT_PER_1K}}", _sanitize_rate_env("TALKIE_INPUT_USD_PER_1K"))
+        .replace("{{TALKIE_COST_OUTPUT_PER_1K}}", _sanitize_rate_env("TALKIE_OUTPUT_USD_PER_1K"))
+    )
 
 
 def _upstream_auth_headers(target_base: str) -> dict[str, str]:

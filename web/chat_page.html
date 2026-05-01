@@ -177,6 +177,11 @@
       text-decoration: underline;
       text-underline-offset: 2px;
     }
+    .footnote .cost-accounting {
+      display: block;
+      margin-top: 0.55rem;
+      letter-spacing: 0.02em;
+    }
     .err-banner {
       display: none;
       margin: 0 1.25rem;
@@ -190,7 +195,11 @@
     .err-banner.visible { display: block; }
   </style>
 </head>
-<body data-talkie-api="__TALKIE_CHAT_API_BASE__">
+<body
+  data-talkie-api="__TALKIE_CHAT_API_BASE__"
+  data-cost-in-per-1k="{{TALKIE_COST_INPUT_PER_1K}}"
+  data-cost-out-per-1k="{{TALKIE_COST_OUTPUT_PER_1K}}"
+>
   <div class="sheet" role="document">
     <header class="masthead">
       <h1>Talkie</h1>
@@ -211,6 +220,7 @@
     Instrument: vintage language models ·
     <a href="https://github.com/CastaliaInstitute/talkie">our manuscript</a> ·
     <a href="https://talkie-lm.com/">provenance</a>
+    <span class="cost-accounting" id="cost-ledger" aria-live="polite">Ledger · this sitting: no tokens tallied yet.</span>
   </p>
 <script>
 (function () {
@@ -222,7 +232,37 @@
   const msg = document.getElementById('msg');
   const btn = document.getElementById('btn');
   const err = document.getElementById('err');
+  const costLedger = document.getElementById('cost-ledger');
   const messages = [];
+
+  const rateInPer1k = parseFloat(document.body.getAttribute('data-cost-in-per-1k') || '0') || 0;
+  const rateOutPer1k = parseFloat(document.body.getAttribute('data-cost-out-per-1k') || '0') || 0;
+  var sessionIn = 0;
+  var sessionOut = 0;
+  var sessionUsd = 0;
+
+  function fmtInt(n) {
+    return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  function fmtUsd(n) {
+    if (rateInPer1k === 0 && rateOutPer1k === 0) return '—';
+    return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+
+  function renderLedger() {
+    if (!costLedger) return;
+    var totalTok = sessionIn + sessionOut;
+    var parts = [
+      'Ledger · this sitting:',
+      fmtInt(totalTok) + ' tokens',
+      '(' + fmtInt(sessionIn) + ' in,',
+      fmtInt(sessionOut) + ' out)'
+    ];
+    if (rateInPer1k > 0 || rateOutPer1k > 0) parts.push('· est. ' + fmtUsd(sessionUsd));
+    else parts.push('· est. (set TALKIE_INPUT_USD_PER_1K / TALKIE_OUTPUT_USD_PER_1K on the site for USD)');
+    costLedger.textContent = parts.join(' ');
+  }
 
   function showErr(t) {
     err.textContent = t;
@@ -287,6 +327,16 @@
       messages.push({ role: 'assistant', content: reply });
       pendingEl.classList.remove('pending');
       pendingEl.querySelector('.body').textContent = reply;
+
+      var usage = data.usage;
+      if (usage && typeof usage === 'object') {
+        var pi = parseInt(usage.prompt_tokens, 10) || 0;
+        var po = parseInt(usage.completion_tokens, 10) || 0;
+        sessionIn += pi;
+        sessionOut += po;
+        sessionUsd += (pi / 1000) * rateInPer1k + (po / 1000) * rateOutPer1k;
+        renderLedger();
+      }
     } catch (e) {
       pendingEl.remove();
       showErr(e.message || 'A fault on the line.');

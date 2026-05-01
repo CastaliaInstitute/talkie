@@ -130,6 +130,10 @@ Set on **`talkie-web`** (CPU):
 |-----|---------|
 | `TALKIE_UPSTREAM_URL` | Base URL of the Talkie GPU service (e.g. `https://talkie-gpu-xxxxx.us-central1.run.app`) — **no** trailing slash |
 | `TALKIE_UPSTREAM_BEARER` | Optional static bearer if identity tokens are not used |
+| `TALKIE_INPUT_USD_PER_1K` | Optional. USD per **1,000 prompt tokens** (injected into the page for footer **est.** cost) |
+| `TALKIE_OUTPUT_USD_PER_1K` | Optional. USD per **1,000 completion tokens** for the same footer estimate |
+
+If the rates are unset, the footer still **tallies tokens** from the GPU `usage` object when present; USD appears after you set the rates and redeploy **`talkie-web`**.
 
 If `TALKIE_UPSTREAM_URL` is unset, the UI loads but chat returns **503** (“apparatus is not yet connected”).
 

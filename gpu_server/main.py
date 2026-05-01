@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from talkie.chat import Message
+from talkie.chat import Message, format_chat
 from talkie.generate import Talkie
 
 logger = logging.getLogger(__name__)
@@ -112,18 +112,22 @@ async def chat_completions(request: Request):
 
     def _complete():
         assert _talker is not None
-        return _talker.chat(
+        formatted = format_chat(messages)
+        prompt_tokens = len(_talker.tokenizer.encode(formatted, allowed_special="all"))
+        result = _talker.chat(
             messages,
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=top_p,
             top_k=top_k,
         )
+        return result, prompt_tokens
 
     try:
-        result = await loop.run_in_executor(_executor, _complete)
+        result, prompt_tokens = await loop.run_in_executor(_executor, _complete)
     except ValueError as e:
         return JSONResponse({"error": {"message": str(e)}}, status_code=400)
+    completion_tokens = result.token_count
     now = int(time.time())
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
@@ -137,4 +141,9 @@ async def chat_completions(request: Request):
                 "finish_reason": result.finish_reason,
             }
         ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
     }
