@@ -1,4 +1,4 @@
-# Small image for landing + /health only (no PyTorch / model weights).
+# Castalia CPU Cloud Run: circa-1931 chat UI, /health, optional proxy to GPU (/v1/chat/completions).
 FROM python:3.12-slim-bookworm
 
 WORKDIR /app

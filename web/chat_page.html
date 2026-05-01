@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Talkie · Castalia Institute</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&amp;family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   <style>
     :root {
       --paper: #e8e0d0;
@@ -93,9 +93,7 @@
       margin-bottom: 0.35rem;
     }
     .turn.user .label { color: var(--seal); }
-    .turn.assistant .body {
-      text-indent: 1.25em;
-    }
+    .turn.assistant .body { text-indent: 1.25em; }
     .turn .body {
       margin: 0;
       white-space: pre-wrap;
@@ -192,8 +190,8 @@
     .err-banner.visible { display: block; }
   </style>
 </head>
-<body>
-  <div class="sheet" role="application" aria-label="Talkie correspondence">
+<body data-talkie-api="__TALKIE_CHAT_API_BASE__">
+  <div class="sheet" role="document">
     <header class="masthead">
       <h1>Talkie</h1>
       <p class="sub">A civil parlour for discourse</p>
@@ -203,19 +201,23 @@
     <div id="log" class="correspondence" aria-live="polite"></div>
     <div class="composer">
       <label for="msg">Your dispatch</label>
-      <textarea id="msg" placeholder="Compose your message in the manner of the early twentieth century…" rows="4"></textarea>
+      <textarea id="msg" rows="4" maxlength="8192" placeholder="Ink your message…"></textarea>
       <div class="actions">
-        <button type="button" class="send" id="btn">Seal &amp; send</button>
+        <button type="button" class="send" id="btn">Seal & send</button>
       </div>
     </div>
   </div>
   <p class="footnote">
     Instrument: vintage language models ·
-    <a href="{{FORK}}" rel="noopener">our manuscript</a> ·
-    <a href="{{UPSTREAM}}" rel="noopener">provenance</a>
+    <a href="https://github.com/CastaliaInstitute/talkie">our manuscript</a> ·
+    <a href="https://talkie-lm.com/">provenance</a>
   </p>
-  <script>
+<script>
 (function () {
+  const apiAttr = document.body ? document.body.getAttribute('data-talkie-api') : null;
+  const apiBase = (apiAttr && apiAttr.trim() !== '__TALKIE_CHAT_API_BASE__' ? apiAttr : '').trim().replace(/\/+$/, '');
+  const completionsUrl = apiBase ? (apiBase + '/v1/chat/completions') : '/v1/chat/completions';
+
   const log = document.getElementById('log');
   const msg = document.getElementById('msg');
   const btn = document.getElementById('btn');
@@ -261,7 +263,7 @@
     const pendingEl = appendTurn('assistant', 'The wires warm; awaiting a reply…', true);
 
     try {
-      const res = await fetch('/v1/chat/completions', {
+      const res = await fetch(completionsUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -303,6 +305,6 @@
     }
   });
 })();
-  </script>
+</script>
 </body>
 </html>
