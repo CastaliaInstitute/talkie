@@ -113,6 +113,47 @@ gcloud run deploy talkie-gpu \
 
 `--no-gpu-zonal-redundancy` uses a **different Cloud Run GPU quota bucket**. If **`gcloud run deploy`** fails with *no quota for GPUs **without** zonal redundancy*, **drop** that flag (default in the **Deploy Talkie GPU** GitHub Action). If it fails for *with* zonal redundancy instead, request **GPU quota** for your project: [g.co/cloudrun/gpu-quota](https://g.co/cloudrun/gpu-quota). The workflow **Run workflow** form includes a checkbox to pass `--no-gpu-zonal-redundancy` when your project only has that pool.
 
+### Request L4 quota from the CLI (optional)
+
+Use [**`gcloud beta quotas preferences create`**](https://cloud.google.com/docs/quotas/api) so Google can reach you. Castalia’s contact for quota correspondence:
+
+**`custodian@castalia.institute`**
+
+Replace `REGION` if you deploy outside `us-central1`. Use a unique `--preference-id` per request (or **`preferences update`** if one already exists).
+
+**Zonal redundancy pool** (default Cloud Run GPU deploy):
+
+```bash
+export REGION=us-central1
+export PROJECT_ID=$(gcloud config get-value project)
+
+gcloud beta quotas preferences create \
+  --project="$PROJECT_ID" \
+  --service=run.googleapis.com \
+  --quota-id=NvidiaL4GpuAllocPerProjectRegion \
+  --dimensions=region="$REGION" \
+  --preferred-value=1 \
+  --email=custodian@castalia.institute \
+  --justification='Cloud Run talkie-gpu: 1x NVIDIA L4 for Talkie 13B inference (Castalia Institute).' \
+  --preference-id="castalia-talkie-l4-${REGION}-zonal"
+```
+
+**No zonal redundancy pool** (only if you deploy with `--no-gpu-zonal-redundancy`):
+
+```bash
+gcloud beta quotas preferences create \
+  --project="$PROJECT_ID" \
+  --service=run.googleapis.com \
+  --quota-id=NvidiaL4GpuAllocNoZonalRedundancyPerProjectRegion \
+  --dimensions=region="$REGION" \
+  --preferred-value=1 \
+  --email=custodian@castalia.institute \
+  --justification='Cloud Run talkie-gpu: 1x L4, no zonal redundancy pool.' \
+  --preference-id="castalia-talkie-l4-${REGION}-nozonal"
+```
+
+The address must be a Google account **allowed to approve quota** on this project, or Google may reject follow-ups.
+
 **`.dockerignore`:** must **not** exclude `src/`, `pyproject.toml`, or `README.md`, or the GPU image build will fail (`Dockerfile.gpu` copies them).
 
 If Hugging Face needs a token, create a Secret Manager secret and add e.g. `--set-secrets HF_TOKEN=hf-token:latest` (and set `HUGGING_FACE_HUB_TOKEN` or download auth per HF docs). Increase **`--timeout`** for first-boot model download; consider **`--min-instances 1`** after debugging cold starts.
