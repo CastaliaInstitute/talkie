@@ -119,7 +119,29 @@ Use [**`gcloud beta quotas preferences create`**](https://cloud.google.com/docs/
 
 **`custodian@castalia.institute`**
 
-Replace `REGION` if you deploy outside `us-central1`. Use a unique `--preference-id` per request (or **`preferences update`** if one already exists).
+Replace `REGION` if you deploy outside `us-central1`. Use a unique `--preference-id` on **create** only if no preference exists yet for that quota + region.
+
+**If `create` fails with** `Quota Preference with dimension '{}' already exist` — Google allows **one** preference per (`service`, `quota-id`, `dimensions`) on the project. List what you already have, then call **`update`** with that preference **id** (the last path segment of `name`):
+
+```bash
+gcloud beta quotas preferences list --project="$PROJECT_ID" \
+  --format="table(name.basename(),quotaId,dimensions)"
+```
+
+Example **update** (same flags as create, but positional id + **`preferences update`**):
+
+```bash
+gcloud beta quotas preferences update talkie-nvidia-l4-us-central1-zonal \
+  --project="$PROJECT_ID" \
+  --service=run.googleapis.com \
+  --quota-id=NvidiaL4GpuAllocPerProjectRegion \
+  --dimensions=region="$REGION" \
+  --preferred-value=1 \
+  --email=custodian@castalia.institute \
+  --justification='Cloud Run talkie-gpu: 1x NVIDIA L4 for Talkie 13B inference (Castalia Institute).'
+```
+
+Use your real preference id from `list` (the example id matches an existing Castalia project entry; substitute if yours differs). Do the same pattern for **`NvidiaL4GpuAllocNoZonalRedundancyPerProjectRegion`** using its preference id.
 
 **Zonal redundancy pool** (default Cloud Run GPU deploy):
 
