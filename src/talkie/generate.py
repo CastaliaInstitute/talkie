@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Generator, Literal
 
@@ -16,7 +17,7 @@ from talkie.chat import (
 )
 from talkie.config import MODELS
 from talkie.download import get_model_files
-from talkie.model import load_checkpoint
+from talkie.model import QuantizationMode, load_checkpoint
 from talkie.sampling import (
     list_top_k_tensor,
     list_top_p_tensor,
@@ -59,6 +60,10 @@ class Talkie:
         PyTorch device string.  Defaults to ``"cuda"`` if available.
     cache_dir:
         Custom HuggingFace cache directory.
+    quantization:
+        ``"none"`` (full bfloat16 on device) or ``"nf4"`` (bitsandbytes NF4
+        linears for low VRAM). ``None`` reads env ``TALKIE_QUANTIZATION``
+        (default ``none``).
     """
 
     def __init__(
@@ -66,6 +71,7 @@ class Talkie:
         model_name: str,
         device: str | None = None,
         cache_dir: str | None = None,
+        quantization: QuantizationMode | None = None,
     ):
         if model_name not in MODELS:
             available = ", ".join(sorted(MODELS))
@@ -86,9 +92,23 @@ class Talkie:
         self.tokenizer = build_tokenizer(vocab_path, style=self.spec.style)
         target_vocab = IT_VOCAB_SIZE if self.spec.style == "it" else None
 
+        if quantization is None:
+            raw = os.environ.get("TALKIE_QUANTIZATION", "none").strip().lower()
+            if raw in ("", "none", "bf16", "bfloat16"):
+                mode: QuantizationMode = "none"
+            elif raw in ("nf4", "4bit", "bnb", "bnb-nf4"):
+                mode = "nf4"
+            else:
+                raise ValueError(
+                    f"Unknown TALKIE_QUANTIZATION={raw!r} "
+                    "(use none, nf4)"
+                )
+        else:
+            mode = quantization
+
         # Load model.
         self.model = load_checkpoint(
-            str(ckpt_path), self.device, target_vocab_size=target_vocab
+            str(ckpt_path), self.device, target_vocab_size=target_vocab, quantization=mode
         )
 
         # Stop tokens.

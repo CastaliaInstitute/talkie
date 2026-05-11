@@ -6,13 +6,20 @@ embedding skip connections, and per-head / per-layer gain parameters.
 
 from __future__ import annotations
 
+import gc
+import logging
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from talkie.sampling import apply_top_k_top_p, sample_gumbel
+
+logger = logging.getLogger(__name__)
+
+QuantizationMode = Literal["none", "nf4"]
 
 
 # ---------------------------------------------------------------------------
@@ -261,39 +268,123 @@ def resize_model_embeddings(
     return model
 
 
+def _safe_torch_load(checkpoint_path: str) -> dict | object:
+    """Load a checkpoint with mmap / ``weights_only`` when supported."""
+
+    attempts: list[dict] = [
+        {"map_location": "cpu", "mmap": True, "weights_only": True},
+        {"map_location": "cpu", "mmap": False, "weights_only": True},
+        {"map_location": "cpu"},
+    ]
+    last_err: Exception | None = None
+    for kwargs in attempts:
+        try:
+            return torch.load(checkpoint_path, **kwargs)
+        except Exception as e:
+            last_err = e
+    assert last_err is not None
+    raise last_err
+
+
+def _replace_linears_with_nf4(module: nn.Module, device: torch.device) -> None:
+    import bitsandbytes as bnb
+
+    for name, child in list(module.named_children()):
+        if isinstance(child, nn.Linear):
+            q = bnb.nn.Linear4bit(
+                child.in_features,
+                child.out_features,
+                bias=child.bias is not None,
+                compute_dtype=torch.bfloat16,
+                quant_type="nf4",
+            )
+            q.load_state_dict(child.state_dict())
+            setattr(module, name, q.to(device))
+        else:
+            _replace_linears_with_nf4(child, device)
+
+
+def _nf4_transfer_one_block(blk: Block, device: torch.device) -> None:
+    _replace_linears_with_nf4(blk.attn, device)
+    _replace_linears_with_nf4(blk.mlp, device)
+    blk.attn.head_gain = blk.attn.head_gain.to(device)
+    blk.attn_gain = blk.attn_gain.to(device)
+    blk.mlp_gain = blk.mlp_gain.to(device)
+    blk.embed_skip = blk.embed_skip.to(device)
+
+
+def _materialize_nf4_on_gpu(model: TalkieModel, device: torch.device) -> None:
+    model.cos = model.cos.to(device)
+    model.sin = model.sin.to(device)
+    model.embed = model.embed.to(device)
+    model.lm_head = nn.Parameter(model.lm_head.data.to(device))
+    model.lm_head_gain = model.lm_head_gain.to(device)
+
+    for i in range(len(model.blocks)):
+        _nf4_transfer_one_block(model.blocks[i], device)
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+    model.device = device
+
+
 def load_checkpoint(
     checkpoint_path: str,
     device: torch.device,
     target_vocab_size: int | None = None,
+    *,
+    quantization: QuantizationMode = "none",
 ) -> TalkieModel:
     """Load a Talkie model from a PyTorch checkpoint file.
 
     Handles ``torch.compile`` key prefixes and optional vocab resizing.
-    Builds and converts to bfloat16 on CPU first, then moves to GPU to
-    avoid a transient 2x memory spike from float32 initialisation.
+    With ``quantization="none"``, builds on CPU in bfloat16, then moves to
+    ``device`` (legacy path).
+
+    With ``quantization="nf4"``, keeps weights on CPU until each transformer
+    block is transferred: linear layers become bitsandbytes NF4 on GPU so a
+    13B model can fit in ~24 GiB VRAM (e.g. Cloud Run L4). Requires
+    ``bitsandbytes`` and a CUDA device.
     """
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    if "model_state_dict" in ckpt:
-        state_dict = ckpt["model_state_dict"]
-    elif "model" in ckpt:
-        state_dict = ckpt["model"]
+    ckpt_obj = _safe_torch_load(checkpoint_path)
+    if isinstance(ckpt_obj, dict):
+        if "model_state_dict" in ckpt_obj:
+            state_dict = ckpt_obj["model_state_dict"]
+        elif "model" in ckpt_obj:
+            state_dict = ckpt_obj["model"]
+        else:
+            state_dict = ckpt_obj
     else:
-        state_dict = ckpt
+        raise ValueError(f"Unexpected checkpoint root type: {type(ckpt_obj)!r}")
     state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 
     ckpt_vocab_size = state_dict["embed.weight"].shape[0]
     config = GPTConfig(vocab_size=ckpt_vocab_size)
 
-    # Build on CPU, load weights, convert to bfloat16, THEN move to GPU.
     cpu = torch.device("cpu")
     model = TalkieModel(config, cpu)
     model.load_state_dict(state_dict, strict=True)
-    del ckpt, state_dict
+    del ckpt_obj, state_dict
+    gc.collect()
 
     if target_vocab_size is not None and ckpt_vocab_size < target_vocab_size:
         model = resize_model_embeddings(model, target_vocab_size, cpu)
 
-    model = model.to(dtype=torch.bfloat16).to(device)
-    model.device = device
+    model = model.to(dtype=torch.bfloat16)
+
+    if quantization == "none":
+        model = model.to(device)
+        model.device = device
+        model.eval()
+        return model
+
+    if quantization != "nf4":
+        raise ValueError(f"Unknown quantization mode: {quantization!r}")
+
+    if device.type != "cuda":
+        raise ValueError('quantization="nf4" requires a CUDA device')
+
+    _materialize_nf4_on_gpu(model, device)
     model.eval()
     return model

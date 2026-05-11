@@ -78,9 +78,16 @@ docker run --gpus all -e PORT=8080 -p 8080:8080 talkie-gpu
 
 The first start downloads weights from Hugging Face into `HF_HOME` (default in container: use `-e HF_HOME=/path/with/space` if you mount a volume).
 
-### VRAM and Cloud Run
+### L4 + NF4 (default) and Hugging Face access
 
-**RAM / VRAM on Cloud Run:** Loading uses `torch.load(..., map_location="cpu")` then moves weights to the GPU, so **instance RAM** must hold the checkpoint (on the order of tens of GiB for bf16). **Cloud Run pairs L4 with at most 32 GiB instance memory** (with 8 vCPU) and **24 GiB L4 VRAM**. A full **13B bf16** checkpoint is **~26 GiB of parameters alone**, so this SKU often **OOMs (SIGKILL) during startup** and inference may still not fit. For this model class, plan on **a larger GPU** (e.g. Cloud Run **RTX PRO 6000** where supported), **GKE / Compute Engine**, or a **quantized / smaller** checkpoint if you add one.
+The GPU image sets **`TALKIE_QUANTIZATION=nf4`**: linear layers are loaded in **NF4** via **bitsandbytes**, block-by-block, so **13B** can run on **Cloud Run L4 (~24 GiB VRAM)** with **`min-instances=0`** for low traffic. The **embedding** and **`lm_head`** stay **bf16** (~1.3 GiB combined for a 64k vocab). **Quality** may be slightly lower than full bf16; set **`TALKIE_QUANTIZATION=none`** on a larger GPU if you need the original path.
+
+**Hugging Face Hub:** the first cold start still downloads the checkpoint into **`HF_HOME`** (ephemeral on Cloud Run unless you add a volume). Set a read token so you are not throttled and can access private repos:
+
+- Env **`HF_TOKEN`** or **`HUGGING_FACE_HUB_TOKEN`** (both are honored by `huggingface_hub`), or  
+- **`gcloud run deploy ... --set-secrets=HF_TOKEN=hf-token:latest`** after creating a Secret Manager secret.
+
+Add **`--set-secrets`** on the **`gcloud run deploy`** line below when you use a secret (see the full example).
 
 ### GPU region (try EU if `us-central1` quota is stuck)
 
@@ -117,7 +124,7 @@ gcloud run deploy talkie-gpu \
   --min-instances 0 \
   --max-instances 1 \
   --port 8080 \
-  --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
+  --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,TALKIE_QUANTIZATION=nf4,HF_HOME=/tmp/hf"
 ```
 
 `--no-gpu-zonal-redundancy` uses a **different Cloud Run GPU quota bucket**. If **`gcloud run deploy`** fails with *no quota for GPUs **without** zonal redundancy*, **drop** that flag (default in the **Deploy Talkie GPU** GitHub Action). If it fails for *with* zonal redundancy instead, request **GPU quota** for your project: [g.co/cloudrun/gpu-quota](https://g.co/cloudrun/gpu-quota). The workflow **Run workflow** form includes a checkbox to pass `--no-gpu-zonal-redundancy` when your project only has that pool.

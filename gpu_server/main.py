@@ -31,7 +31,12 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 
 def _load_model() -> Talkie:
-    logger.warning("Loading Talkie model %s (cache=%s)...", MODEL_NAME, CACHE_DIR)
+    logger.warning(
+        "Loading Talkie model %s (cache=%s, TALKIE_QUANTIZATION=%s)...",
+        MODEL_NAME,
+        CACHE_DIR,
+        os.environ.get("TALKIE_QUANTIZATION", "none"),
+    )
     return Talkie(MODEL_NAME, device=DEVICE, cache_dir=CACHE_DIR)
 
 

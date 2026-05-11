@@ -79,7 +79,7 @@ jobs:
             --min-instances 0 \
             --max-instances 1 \
             --port 8080 \
-            --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
+            --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,TALKIE_QUANTIZATION=nf4,HF_HOME=/tmp/hf"
 
       - name: Allow talkie-web to invoke talkie-gpu
         env:
