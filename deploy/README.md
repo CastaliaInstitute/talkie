@@ -80,7 +80,7 @@ The first start downloads weights from Hugging Face into `HF_HOME` (default in c
 
 ### VRAM and Cloud Run
 
-The upstream README targets **~28 GiB VRAM** for bfloat16. Cloud Run’s **NVIDIA L4 is 24 GiB** — it may OOM for the full 13B checkpoint; validate on your account or run this API on a larger GPU (GKE, Compute Engine, etc.) and still point `TALKIE_UPSTREAM_URL` at that URL.
+**RAM / VRAM on Cloud Run:** Loading uses `torch.load(..., map_location="cpu")` then moves weights to the GPU, so **instance RAM** must hold the checkpoint (on the order of tens of GiB for bf16). **Cloud Run pairs L4 with at most 32 GiB instance memory** (with 8 vCPU) and **24 GiB L4 VRAM**. A full **13B bf16** checkpoint is **~26 GiB of parameters alone**, so this SKU often **OOMs (SIGKILL) during startup** and inference may still not fit. For this model class, plan on **a larger GPU** (e.g. Cloud Run **RTX PRO 6000** where supported), **GKE / Compute Engine**, or a **quantized / smaller** checkpoint if you add one.
 
 ### GPU region (try EU if `us-central1` quota is stuck)
 
@@ -205,6 +205,8 @@ Set on **`talkie-web`** (CPU):
 | `TALKIE_OUTPUT_USD_PER_1K` | Optional. USD per **1,000 completion tokens** for the same footer estimate |
 
 If the rates are unset, the footer still **tallies tokens** from the GPU `usage` object when present; USD appears after you set the rates and redeploy **`talkie-web`**.
+
+The **`web/`** container must include **`requests`** (declared in **`web/requirements.txt`**) so `google.oauth2.id_token.fetch_id_token` can run; without it, the proxy may forward **without** a Bearer token and the GPU returns **403**.
 
 If `TALKIE_UPSTREAM_URL` is unset, the UI loads but chat returns **503** (“apparatus is not yet connected”).
 
