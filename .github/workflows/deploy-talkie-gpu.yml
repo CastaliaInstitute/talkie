@@ -75,10 +75,12 @@ jobs:
             --gpu-type nvidia-l4 \
             --memory 32Gi \
             --cpu 8 \
+            --cpu-boost \
             --timeout 3600 \
             --min-instances 0 \
             --max-instances 1 \
             --port 8080 \
+            --startup-probe=tcpSocket.port=8080,timeoutSeconds=5,periodSeconds=10,failureThreshold=12 \
             --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,TALKIE_QUANTIZATION=nf4,HF_HOME=/tmp/hf"
 
       - name: Allow talkie-web to invoke talkie-gpu

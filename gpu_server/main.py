@@ -27,6 +27,7 @@ CACHE_DIR = os.environ.get("HF_HOME") or os.environ.get("TALKIE_CACHE_DIR") or "
 DEVICE = os.environ.get("TALKIE_DEVICE") or None
 
 _talker: Talkie | None = None
+_load_error: str | None = None
 _executor = ThreadPoolExecutor(max_workers=1)
 
 
@@ -40,14 +41,28 @@ def _load_model() -> Talkie:
     return Talkie(MODEL_NAME, device=DEVICE, cache_dir=CACHE_DIR)
 
 
+async def _load_model_task() -> None:
+    """Load weights in a worker thread so startup can finish and bind $PORT (Cloud Run TCP probe)."""
+
+    global _talker, _load_error
+    try:
+        loop = asyncio.get_running_loop()
+        _talker = await loop.run_in_executor(_executor, _load_model)
+        logger.warning("Talkie model ready.")
+    except Exception as e:
+        _load_error = str(e)[:2000]
+        logger.exception("Talkie model load failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global _talker
-    loop = asyncio.get_running_loop()
-    _talker = await loop.run_in_executor(_executor, _load_model)
-    logger.warning("Talkie model ready.")
+    global _talker, _load_error
+    _talker = None
+    _load_error = None
+    asyncio.create_task(_load_model_task())
     yield
     _talker = None
+    _load_error = None
 
 
 app = FastAPI(title="Talkie GPU API", version="0.1.0", lifespan=lifespan)
@@ -55,6 +70,11 @@ app = FastAPI(title="Talkie GPU API", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health", response_model=None)
 def health():
+    if _load_error is not None:
+        return JSONResponse(
+            {"status": "error", "detail": _load_error[:500]},
+            status_code=503,
+        )
     if _talker is None:
         return JSONResponse({"status": "loading"}, status_code=503)
     return {"status": "ok", "model": MODEL_NAME}
@@ -78,9 +98,14 @@ def _parse_messages(body: dict) -> list[Message] | None:
 
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request):
+    if _load_error is not None:
+        return JSONResponse(
+            {"error": {"message": f"model load failed: {_load_error[:500]}"}},
+            status_code=503,
+        )
     if _talker is None:
         return JSONResponse(
-            {"error": {"message": "model not loaded"}},
+            {"error": {"message": "model not loaded yet"}},
             status_code=503,
         )
 
