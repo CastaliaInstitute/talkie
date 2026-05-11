@@ -343,19 +343,16 @@ def _nf4_transfer_one_block(blk: Block, device: torch.device) -> None:
     blk.embed_skip = blk.embed_skip.to(device)
 
 
-def _materialize_nf4_on_gpu(model: TalkieModel, device: torch.device) -> None:
+def _nf4_move_embeddings_and_rope_to_gpu(
+    model: TalkieModel, device: torch.device
+) -> None:
+    """Move embedding / head / RoPE (still dense bf16) to the GPU after blocks are NF4."""
+
     model.cos = model.cos.to(device)
     model.sin = model.sin.to(device)
     model.embed = model.embed.to(device)
     model.lm_head = nn.Parameter(model.lm_head.data.to(device))
     model.lm_head_gain = model.lm_head_gain.to(device)
-
-    for i in range(len(model.blocks)):
-        _nf4_transfer_one_block(model.blocks[i], device)
-        gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-
     model.device = device
 
 
@@ -393,10 +390,11 @@ def load_checkpoint(
     With ``quantization="none"``, builds on CPU in bfloat16, then moves to
     ``device`` (legacy path).
 
-    With ``quantization="nf4"``, constructs weights on the **meta** device,
-    loads the checkpoint with ``assign=True`` (no duplicate ~26 GiB CPU
-    allocation), then blockwise NF4 transfer for Cloud Run L4. Requires
-    ``bitsandbytes`` and a CUDA device.
+    With ``quantization="nf4"``, loads **non-block** tensors on **meta**, then
+    streams each **block** from the checkpoint (mmap-friendly), converts Linears
+    to **NF4** on GPU, and moves embeddings / head last — peak CPU RAM stays near
+    **one block** plus embeddings (fits Cloud Run 32 GiB). Requires
+    ``bitsandbytes`` and CUDA.
     """
     ckpt_obj = _safe_torch_load(checkpoint_path)
     if isinstance(ckpt_obj, dict):
@@ -418,13 +416,18 @@ def load_checkpoint(
             raise ValueError('quantization="nf4" requires a CUDA device')
 
         meta = torch.device("meta")
-        model = TalkieModel(
-            config, torch.device("cpu"), param_device=meta
-        )
-        model.load_state_dict(state_dict, strict=True, assign=True)
-        _refresh_rope_buffers(model)
+        model = TalkieModel(config, torch.device("cpu"), param_device=meta)
         del ckpt_obj
-        del state_dict
+
+        non_block = {
+            k: v for k, v in state_dict.items() if not k.startswith("blocks.")
+        }
+        missing, unexpected = model.load_state_dict(non_block, assign=True, strict=False)
+        if unexpected:
+            raise ValueError(f"Unexpected keys in checkpoint: {unexpected[:12]}")
+        _refresh_rope_buffers(model)
+        for k in list(non_block.keys()):
+            del state_dict[k]
         gc.collect()
 
         if target_vocab_size is not None and ckpt_vocab_size < target_vocab_size:
@@ -432,8 +435,36 @@ def load_checkpoint(
                 model, target_vocab_size, model.embed.weight.device
             )
 
+        n_layer = config.n_layer
+        for i in range(n_layer):
+            prefix = f"blocks.{i}."
+            sub = {
+                k[len(prefix):]: state_dict[k]
+                for k in list(state_dict.keys())
+                if k.startswith(prefix)
+            }
+            blk = Block(config, param_device=meta)
+            blk.load_state_dict(sub, assign=True, strict=True)
+            for k in list(sub.keys()):
+                fk = prefix + k
+                if fk in state_dict:
+                    del state_dict[fk]
+            del sub
+            gc.collect()
+            _nf4_transfer_one_block(blk, device)
+            model.blocks[i] = blk
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            if (i + 1) % 4 == 0:
+                logger.info("NF4: streamed blocks %d/%d", i + 1, n_layer)
+
+        if state_dict:
+            raise ValueError(
+                f"Unused checkpoint keys after NF4 stream (sample): {list(state_dict.keys())[:8]}"
+            )
+
         _parameters_to_bfloat16_one_by_one(model)
-        _materialize_nf4_on_gpu(model, device)
+        _nf4_move_embeddings_and_rope_to_gpu(model, device)
         model.eval()
         return model
 
