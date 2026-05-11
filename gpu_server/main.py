@@ -48,8 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Talkie GPU API", version="0.1.0", lifespan=lifespan)
 
 
-@app.get("/health")
-def health() -> JSONResponse | dict[str, str]:
+@app.get("/health", response_model=None)
+def health():
     if _talker is None:
         return JSONResponse({"status": "loading"}, status_code=503)
     return {"status": "ok", "model": MODEL_NAME}
@@ -71,7 +71,7 @@ def _parse_messages(body: dict) -> list[Message] | None:
     return out if out else None
 
 
-@app.post("/v1/chat/completions")
+@app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request):
     if _talker is None:
         return JSONResponse(
