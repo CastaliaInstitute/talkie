@@ -370,6 +370,16 @@ def _refresh_rope_buffers(model: TalkieModel, max_seq_len: int = 2048) -> None:
     model.register_buffer("sin", sin, persistent=False)
 
 
+def _parameters_to_bfloat16_one_by_one(model: nn.Module) -> None:
+    """Avoid ``model.to(bfloat16)``, which can briefly duplicate all CPU tensors."""
+
+    with torch.no_grad():
+        for _name, p in model.named_parameters():
+            if p.data.dtype == torch.float32:
+                p.data = p.data.to(torch.bfloat16)
+                gc.collect()
+
+
 def load_checkpoint(
     checkpoint_path: str,
     device: torch.device,
@@ -422,7 +432,7 @@ def load_checkpoint(
                 model, target_vocab_size, model.embed.weight.device
             )
 
-        model = model.to(dtype=torch.bfloat16)
+        _parameters_to_bfloat16_one_by_one(model)
         _materialize_nf4_on_gpu(model, device)
         model.eval()
         return model
