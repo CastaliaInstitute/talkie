@@ -80,7 +80,7 @@ The first start downloads weights from Hugging Face into `HF_HOME` (default in c
 
 ### L4 + NF4 (default) and Hugging Face access
 
-The GPU image sets **`TALKIE_QUANTIZATION=nf4`**: linear layers are loaded in **NF4** via **bitsandbytes**, block-by-block, so **13B** can run on **Cloud Run L4 (~24 GiB VRAM)** with **`min-instances=0`** for low traffic. The **embedding** and **`lm_head`** stay **bf16** (~1.3 GiB combined for a 64k vocab). **Quality** may be slightly lower than full bf16; set **`TALKIE_QUANTIZATION=none`** on a larger GPU if you need the original path.
+The GPU image sets **`TALKIE_QUANTIZATION=nf4`**: the loader builds the module graph on the **meta** device and uses **`load_state_dict(..., assign=True)`** so the ~26 GiB checkpoint is **not** duplicated alongside a full random CPU init (which OOM’d Cloud Run’s 32 GiB RAM). Linear layers are then moved to **NF4** on the GPU block-by-block. The **embedding** and **`lm_head`** stay **bf16** (~1.3 GiB combined for a 64k vocab). **Quality** may be slightly lower than full bf16; set **`TALKIE_QUANTIZATION=none`** on a larger GPU if you need the original path.
 
 **Hugging Face Hub:** the first cold start still downloads the checkpoint into **`HF_HOME`** (ephemeral on Cloud Run unless you add a volume). Set a read token so you are not throttled and can access private repos:
 

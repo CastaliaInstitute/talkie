@@ -54,27 +54,30 @@ def apply_rotary_emb(
 
 
 class HeadGain(nn.Module):
-    def __init__(self, n_head: int):
+    def __init__(self, n_head: int, *, param_device: torch.device | None = None):
         super().__init__()
-        self.head_g = nn.Parameter(torch.ones([n_head]))
+        dev = torch.device("cpu") if param_device is None else param_device
+        self.head_g = nn.Parameter(torch.ones([n_head], device=dev))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * self.head_g.type_as(x).view(1, 1, -1, 1)
 
 
 class WeightGain(nn.Module):
-    def __init__(self):
+    def __init__(self, *, param_device: torch.device | None = None):
         super().__init__()
-        self.w_g = nn.Parameter(torch.ones(1))
+        dev = torch.device("cpu") if param_device is None else param_device
+        self.w_g = nn.Parameter(torch.ones(1, device=dev))
 
     def forward(self, w: torch.Tensor) -> torch.Tensor:
         return w * self.w_g.type_as(w)
 
 
 class ActGain(nn.Module):
-    def __init__(self, init_value: float):
+    def __init__(self, init_value: float, *, param_device: torch.device | None = None):
         super().__init__()
-        self.a_g = nn.Parameter(torch.ones(1) * init_value)
+        dev = torch.device("cpu") if param_device is None else param_device
+        self.a_g = nn.Parameter(torch.ones(1, device=dev) * init_value)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * self.a_g.type_as(x)
@@ -86,17 +89,21 @@ class ActGain(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: GPTConfig):
+    def __init__(self, config: GPTConfig, *, param_device: torch.device | None = None):
         super().__init__()
         self.n_head = config.n_head
         self.head_dim = config.head_dim
         n_state = config.n_embd
 
-        self.attn_query = nn.Linear(n_state, n_state, bias=False)
-        self.attn_key = nn.Linear(n_state, n_state, bias=False)
-        self.attn_value = nn.Linear(n_state, n_state, bias=False)
-        self.attn_resid = nn.Linear(n_state, n_state, bias=False)
-        self.head_gain = HeadGain(config.n_head)
+        lin_kw: dict = {"bias": False}
+        if param_device is not None:
+            lin_kw["device"] = param_device
+
+        self.attn_query = nn.Linear(n_state, n_state, **lin_kw)
+        self.attn_key = nn.Linear(n_state, n_state, **lin_kw)
+        self.attn_value = nn.Linear(n_state, n_state, **lin_kw)
+        self.attn_resid = nn.Linear(n_state, n_state, **lin_kw)
+        self.head_gain = HeadGain(config.n_head, param_device=param_device)
 
     def forward(self, x: torch.Tensor, cos_sin: tuple) -> torch.Tensor:
         bsz, seq_len, _ = x.size()
@@ -117,14 +124,18 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config: GPTConfig):
+    def __init__(self, config: GPTConfig, *, param_device: torch.device | None = None):
         super().__init__()
         n_state = config.n_embd
         n_mlp = int(round(((8 / 3) * n_state) / 128) * 128)
 
-        self.mlp_gate = nn.Linear(n_state, n_mlp, bias=False)
-        self.mlp_linear = nn.Linear(n_state, n_mlp, bias=False)
-        self.mlp_resid = nn.Linear(n_mlp, n_state, bias=False)
+        lin_kw: dict = {"bias": False}
+        if param_device is not None:
+            lin_kw["device"] = param_device
+
+        self.mlp_gate = nn.Linear(n_state, n_mlp, **lin_kw)
+        self.mlp_linear = nn.Linear(n_state, n_mlp, **lin_kw)
+        self.mlp_resid = nn.Linear(n_mlp, n_state, **lin_kw)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.silu(self.mlp_gate(x)) * self.mlp_linear(x)
@@ -137,13 +148,13 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, config: GPTConfig):
+    def __init__(self, config: GPTConfig, *, param_device: torch.device | None = None):
         super().__init__()
-        self.attn = CausalSelfAttention(config)
-        self.attn_gain = ActGain((2 * config.n_layer) ** -0.5)
-        self.mlp = MLP(config)
-        self.mlp_gain = ActGain((2 * config.n_layer) ** -0.5)
-        self.embed_skip = ActGain(0.0)
+        self.attn = CausalSelfAttention(config, param_device=param_device)
+        self.attn_gain = ActGain((2 * config.n_layer) ** -0.5, param_device=param_device)
+        self.mlp = MLP(config, param_device=param_device)
+        self.mlp_gain = ActGain((2 * config.n_layer) ** -0.5, param_device=param_device)
+        self.embed_skip = ActGain(0.0, param_device=param_device)
 
     def forward(
         self, e_x: torch.Tensor, x: torch.Tensor, cos_sin: tuple
@@ -157,28 +168,10 @@ class Block(nn.Module):
 class TalkieModel(nn.Module):
     """Talkie 13B decoder-only transformer."""
 
-    def __init__(
-        self, config: GPTConfig, device: torch.device, max_seq_len: int = 2048
-    ):
-        super().__init__()
-        self.config = config
-        self.device = device
-
-        self.embed = nn.Embedding(config.vocab_size, config.n_embd)
-        self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layer)])
-        self.lm_head = nn.Parameter(torch.zeros(config.vocab_size, config.n_embd))
-        self.lm_head_gain = WeightGain()
-
-        cos, sin = self._precompute_rotary_embeddings(max_seq_len, config.head_dim)
-        self.register_buffer("cos", cos, persistent=False)
-        self.register_buffer("sin", sin, persistent=False)
-
-        self.suppress_token_ids: set[int] | None = None
-
-    def _precompute_rotary_embeddings(
-        self, seq_len: int, head_dim: int, base: int = 1_000_000
-    ) -> tuple:
-        device = self.embed.weight.device if hasattr(self, "embed") else "cpu"
+    @staticmethod
+    def precompute_rope_buffers(
+        seq_len: int, head_dim: int, device: torch.device, base: int = 1_000_000
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         channel_range = torch.arange(0, head_dim, 2, dtype=torch.float32, device=device)
         inv_freq = 1.0 / (base ** (channel_range / head_dim))
         t = torch.arange(seq_len, dtype=torch.float32, device=device)
@@ -187,6 +180,43 @@ class TalkieModel(nn.Module):
         cos, sin = cos.bfloat16(), sin.bfloat16()
         cos, sin = cos[None, :, None, :], sin[None, :, None, :]
         return cos, sin
+
+    def __init__(
+        self,
+        config: GPTConfig,
+        device: torch.device,
+        max_seq_len: int = 2048,
+        *,
+        param_device: torch.device | None = None,
+    ):
+        super().__init__()
+        self.config = config
+        self.device = device
+
+        if param_device is None:
+            self.embed = nn.Embedding(config.vocab_size, config.n_embd)
+            self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layer)])
+            self.lm_head = nn.Parameter(torch.zeros(config.vocab_size, config.n_embd))
+            self.lm_head_gain = WeightGain()
+        else:
+            self.embed = nn.Embedding(
+                config.vocab_size, config.n_embd, device=param_device
+            )
+            self.blocks = nn.ModuleList(
+                [Block(config, param_device=param_device) for _ in range(config.n_layer)]
+            )
+            self.lm_head = nn.Parameter(
+                torch.zeros(config.vocab_size, config.n_embd, device=param_device)
+            )
+            self.lm_head_gain = WeightGain(param_device=param_device)
+
+        cos, sin = TalkieModel.precompute_rope_buffers(
+            max_seq_len, config.head_dim, self.embed.weight.device
+        )
+        self.register_buffer("cos", cos, persistent=False)
+        self.register_buffer("sin", sin, persistent=False)
+
+        self.suppress_token_ids: set[int] | None = None
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Run a forward pass and return ``[B, V]`` logits for the last position."""
@@ -329,6 +359,17 @@ def _materialize_nf4_on_gpu(model: TalkieModel, device: torch.device) -> None:
     model.device = device
 
 
+def _refresh_rope_buffers(model: TalkieModel, max_seq_len: int = 2048) -> None:
+    """RoPE buffers are not in checkpoints; rebuild on the embedding weight device."""
+
+    dev = model.embed.weight.device
+    cos, sin = TalkieModel.precompute_rope_buffers(
+        max_seq_len, model.config.head_dim, dev
+    )
+    model.register_buffer("cos", cos, persistent=False)
+    model.register_buffer("sin", sin, persistent=False)
+
+
 def load_checkpoint(
     checkpoint_path: str,
     device: torch.device,
@@ -342,9 +383,9 @@ def load_checkpoint(
     With ``quantization="none"``, builds on CPU in bfloat16, then moves to
     ``device`` (legacy path).
 
-    With ``quantization="nf4"``, keeps weights on CPU until each transformer
-    block is transferred: linear layers become bitsandbytes NF4 on GPU so a
-    13B model can fit in ~24 GiB VRAM (e.g. Cloud Run L4). Requires
+    With ``quantization="nf4"``, constructs weights on the **meta** device,
+    loads the checkpoint with ``assign=True`` (no duplicate ~26 GiB CPU
+    allocation), then blockwise NF4 transfer for Cloud Run L4. Requires
     ``bitsandbytes`` and a CUDA device.
     """
     ckpt_obj = _safe_torch_load(checkpoint_path)
@@ -362,6 +403,33 @@ def load_checkpoint(
     ckpt_vocab_size = state_dict["embed.weight"].shape[0]
     config = GPTConfig(vocab_size=ckpt_vocab_size)
 
+    if quantization == "nf4":
+        if device.type != "cuda":
+            raise ValueError('quantization="nf4" requires a CUDA device')
+
+        meta = torch.device("meta")
+        model = TalkieModel(
+            config, torch.device("cpu"), param_device=meta
+        )
+        model.load_state_dict(state_dict, strict=True, assign=True)
+        _refresh_rope_buffers(model)
+        del ckpt_obj
+        del state_dict
+        gc.collect()
+
+        if target_vocab_size is not None and ckpt_vocab_size < target_vocab_size:
+            model = resize_model_embeddings(
+                model, target_vocab_size, model.embed.weight.device
+            )
+
+        model = model.to(dtype=torch.bfloat16)
+        _materialize_nf4_on_gpu(model, device)
+        model.eval()
+        return model
+
+    if quantization != "none":
+        raise ValueError(f"Unknown quantization mode: {quantization!r}")
+
     cpu = torch.device("cpu")
     model = TalkieModel(config, cpu)
     model.load_state_dict(state_dict, strict=True)
@@ -371,20 +439,7 @@ def load_checkpoint(
     if target_vocab_size is not None and ckpt_vocab_size < target_vocab_size:
         model = resize_model_embeddings(model, target_vocab_size, cpu)
 
-    model = model.to(dtype=torch.bfloat16)
-
-    if quantization == "none":
-        model = model.to(device)
-        model.device = device
-        model.eval()
-        return model
-
-    if quantization != "nf4":
-        raise ValueError(f"Unknown quantization mode: {quantization!r}")
-
-    if device.type != "cuda":
-        raise ValueError('quantization="nf4" requires a CUDA device')
-
-    _materialize_nf4_on_gpu(model, device)
+    model = model.to(dtype=torch.bfloat16).to(device)
+    model.device = device
     model.eval()
     return model
