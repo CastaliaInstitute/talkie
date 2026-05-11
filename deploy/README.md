@@ -82,6 +82,15 @@ The first start downloads weights from Hugging Face into `HF_HOME` (default in c
 
 The upstream README targets **~28 GiB VRAM** for bfloat16. Cloud Run’s **NVIDIA L4 is 24 GiB** — it may OOM for the full 13B checkpoint; validate on your account or run this API on a larger GPU (GKE, Compute Engine, etc.) and still point `TALKIE_UPSTREAM_URL` at that URL.
 
+### GPU region (try EU if `us-central1` quota is stuck)
+
+Per [Cloud Run GPU regions](https://cloud.google.com/run/docs/configuring/services/gpu), **NVIDIA L4** is offered in a small set of locations. **`us-central1`**, **`us-east4`**, and **`asia-south1`** are documented as **invitation-only** for some customers; **`europe-west1`** (Belgium) and **`europe-west4`** (Netherlands) are the usual **first alternatives** when Iowa/Virginia won’t grant quota.
+
+You can run **`talkie-web`** in **`us-central1`** (custom domain, low latency for browsers) and **`talkie-gpu`** in **another region**. The web service calls the GPU URL over HTTPS; expect **extra cross-region latency** on each chat request, which is often acceptable for this workload.
+
+- **GitHub:** workflow **Deploy Talkie GPU** → **Run workflow** → set **region** (e.g. `europe-west4`) instead of the default `us-central1`. The workflow still updates **`talkie-web`** in `us-central1` with **`TALKIE_UPSTREAM_URL`** pointing at the GPU service’s regional `*.run.app` URL.
+- **CLI / quota:** Each region has its own **L4 quota state**. If you have no preference yet for that region, use **`gcloud beta quotas preferences create`** with `--dimensions=region=europe-west4` (and a **new** `--preference-id`). If deploy still fails, use the [quotas console](https://console.cloud.google.com/iam-admin/quotas) filtered to **Cloud Run** and **NVIDIA L4** for that region.
+
 ### Deploy `talkie-gpu` on Cloud Run (example)
 
 Enable APIs and pick a [GPU region](https://cloud.google.com/run/docs/configuring/services/gpu). Your project needs [**Cloud Run GPU quota**](https://cloud.google.com/run/docs/configuring/services/gpu); if deploy fails with a quota error, request allocation (see [GPU quota](https://g.co/cloudrun/gpu-quota)).

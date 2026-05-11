@@ -4,6 +4,10 @@ name: Deploy Talkie GPU (Cloud Run)
 on:
   workflow_dispatch:
     inputs:
+      region:
+        description: Cloud Run region for talkie-gpu (L4). Try europe-west4 or europe-west1 if us-central1 has no quota. talkie-web stays in us-central1.
+        type: string
+        default: us-central1
       no_zonal_redundancy:
         description: Use --no-gpu-zonal-redundancy (only if your project has that GPU quota class)
         type: boolean
@@ -53,6 +57,7 @@ jobs:
 
       - name: Deploy talkie-gpu
         env:
+          REGION: ${{ inputs.region }}
           NO_ZONAL_REDUNDANCY: ${{ inputs.no_zonal_redundancy }}
         run: |
           set -e
@@ -62,7 +67,7 @@ jobs:
           fi
           gcloud run deploy talkie-gpu \
             --image us-central1-docker.pkg.dev/institute-481516/cloud-run-source-deploy/talkie-gpu:latest \
-            --region us-central1 \
+            --region "${REGION}" \
             --project institute-481516 \
             --no-allow-unauthenticated \
             "${REDUNDANCY_FLAG[@]}" \
@@ -77,16 +82,20 @@ jobs:
             --set-env-vars "TALKIE_MODEL_NAME=talkie-1930-13b-it,HF_HOME=/tmp/hf"
 
       - name: Allow talkie-web to invoke talkie-gpu
+        env:
+          REGION: ${{ inputs.region }}
         run: |
           gcloud run services add-iam-policy-binding talkie-gpu \
-            --region=us-central1 \
+            --region="${REGION}" \
             --member=serviceAccount:584409871588-compute@developer.gserviceaccount.com \
             --role=roles/run.invoker \
             --project=institute-481516
 
       - name: Point talkie-web at talkie-gpu (Cloud Run env, not GitHub secrets)
+        env:
+          REGION: ${{ inputs.region }}
         run: |
-          GPU_URL=$(gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)')
+          GPU_URL=$(gcloud run services describe talkie-gpu --region "${REGION}" --project institute-481516 --format='value(status.url)')
           gcloud run services update talkie-web \
             --region us-central1 \
             --project institute-481516 \
@@ -94,16 +103,20 @@ jobs:
 
       - name: Mirror TALKIE_UPSTREAM_URL to repo Actions secret (optional)
         env:
+          REGION: ${{ inputs.region }}
           GH_TOKEN: ${{ secrets.GH_ACTIONS_SECRETS_TOKEN }}
         run: |
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "Skipping secret mirror (GH_ACTIONS_SECRETS_TOKEN not set)."
             exit 0
           fi
-          GPU_URL=$(gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)')
+          GPU_URL=$(gcloud run services describe talkie-gpu --region "${REGION}" --project institute-481516 --format='value(status.url)')
           printf '%s' "$GPU_URL" | gh secret set TALKIE_UPSTREAM_URL --repo "${{ github.repository }}"
 
       - name: Show GPU URL
+        env:
+          REGION: ${{ inputs.region }}
         run: |
+          echo "talkie-gpu region: ${REGION}"
           echo "talkie-gpu URL:"
-          gcloud run services describe talkie-gpu --region us-central1 --project institute-481516 --format='value(status.url)'
+          gcloud run services describe talkie-gpu --region "${REGION}" --project institute-481516 --format='value(status.url)'
