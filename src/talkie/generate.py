@@ -17,6 +17,7 @@ from talkie.chat import (
 )
 from talkie.config import MODELS
 from talkie.download import get_model_files
+from talkie.load_progress import mark_ready, reset, update
 from talkie.model import QuantizationMode, load_checkpoint
 from talkie.sampling import (
     list_top_k_tensor,
@@ -79,6 +80,8 @@ class Talkie:
                 f"Unknown model {model_name!r}. Available: {available}"
             )
 
+        reset("preparing", "Preparing model")
+
         self.model_name = model_name
         self.spec = MODELS[model_name]
         self.device = torch.device(
@@ -86,9 +89,14 @@ class Talkie:
         )
 
         # Download / resolve files.
+        update(
+            "hub",
+            "Downloading or resolving model files (first run may take several minutes)",
+        )
         ckpt_path, vocab_path = get_model_files(model_name, cache_dir=cache_dir)
 
         # Build tokenizer.
+        update("tokenizer", "Loading tokenizer")
         self.tokenizer = build_tokenizer(vocab_path, style=self.spec.style)
         target_vocab = IT_VOCAB_SIZE if self.spec.style == "it" else None
 
@@ -107,9 +115,11 @@ class Talkie:
             mode = quantization
 
         # Load model.
+        update("weights", "Loading neural weights")
         self.model = load_checkpoint(
             str(ckpt_path), self.device, target_vocab_size=target_vocab, quantization=mode
         )
+        mark_ready()
 
         # Stop tokens.
         self._stop_ids: set[int] = {

@@ -114,6 +114,49 @@
       0%, 100% { opacity: 0.55; }
       50% { opacity: 1; }
     }
+    .load-meter {
+      margin-top: 0.75rem;
+      padding-top: 0.55rem;
+      border-top: 1px dotted var(--rule-light);
+    }
+    .load-meter-caption {
+      font-size: 0.78rem;
+      color: var(--ink-soft);
+      font-style: italic;
+      margin-bottom: 0.45rem;
+      line-height: 1.35;
+    }
+    .load-meter-track {
+      position: relative;
+      height: 7px;
+      background: var(--rule-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .load-meter-track.indeterminate {
+      background: linear-gradient(
+        110deg,
+        var(--rule-light) 0%,
+        rgba(138, 119, 95, 0.55) 45%,
+        var(--rule-light) 90%
+      );
+      background-size: 200% 100%;
+      animation: load-meter-shimmer 1.4s ease-in-out infinite;
+    }
+    .load-meter-track.indeterminate .load-meter-fill {
+      opacity: 0;
+    }
+    .load-meter-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--rule);
+      border-radius: 2px;
+      transition: width 0.4s ease-out;
+    }
+    @keyframes load-meter-shimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
     .composer {
       border-top: double 3px var(--rule);
       padding: 1rem 1.25rem 1.25rem;
@@ -236,6 +279,7 @@
   const apiAttr = document.body ? document.body.getAttribute('data-talkie-api') : null;
   const apiBase = (apiAttr && apiAttr.trim() !== '__TALKIE_CHAT_API_BASE__' ? apiAttr : '').trim().replace(/\/+$/, '');
   const completionsUrl = apiBase ? (apiBase + '/v1/chat/completions') : '/v1/chat/completions';
+  const healthUrl = apiBase ? (apiBase + '/health') : '/v1/gpu/health';
 
   const log = document.getElementById('log');
   const msg = document.getElementById('msg');
@@ -300,6 +344,48 @@
     return setInterval(tick, 1000);
   }
 
+  function startProgressPoll(pendingEl, url) {
+    if (!url) return null;
+    var meter = pendingEl.querySelector('.load-meter');
+    if (!meter) return null;
+    var track = meter.querySelector('.load-meter-track');
+    var fill = meter.querySelector('.load-meter-fill');
+    var cap = meter.querySelector('.load-meter-caption');
+    function applyProgress(data) {
+      if (!track || !fill || !cap) return;
+      var prog = data && data.progress;
+      if (prog && typeof prog.label === 'string' && prog.label)
+        cap.textContent = prog.label;
+      if (prog && typeof prog.pct === 'number' && !isNaN(prog.pct)) {
+        track.classList.remove('indeterminate');
+        fill.style.opacity = '1';
+        fill.style.width = Math.min(100, Math.max(0, Math.round(prog.pct * 100))) + '%';
+      } else {
+        track.classList.add('indeterminate');
+        fill.style.width = '0%';
+        fill.style.opacity = '0';
+      }
+    }
+    function poll() {
+      fetch(url)
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (data) {
+          if (data.status === 'loading' || data.status === 'error') applyProgress(data);
+          else if (data.status === 'ok') {
+            if (track && fill && cap) {
+              track.classList.remove('indeterminate');
+              fill.style.opacity = '1';
+              fill.style.width = '100%';
+              cap.textContent = 'Instrument ready — finishing reply…';
+            }
+          }
+        })
+        .catch(function () { /* ignore */ });
+    }
+    poll();
+    return setInterval(poll, 1200);
+  }
+
   function appendTurn(role, text, pending) {
     const wrap = document.createElement('div');
     wrap.className = 'turn ' + role + (pending ? ' pending' : '');
@@ -322,9 +408,43 @@
     }
     wrap.appendChild(lab);
     wrap.appendChild(body);
+    if (pending && role === 'assistant') {
+      var meter = document.createElement('div');
+      meter.className = 'load-meter';
+      var track = document.createElement('div');
+      track.className = 'load-meter-track indeterminate';
+      var fill = document.createElement('div');
+      fill.className = 'load-meter-fill';
+      track.appendChild(fill);
+      var cap = document.createElement('div');
+      cap.className = 'load-meter-caption';
+      cap.textContent = 'Waking the instrument…';
+      meter.appendChild(cap);
+      meter.appendChild(track);
+      wrap.appendChild(meter);
+    }
     log.appendChild(wrap);
     log.scrollTop = log.scrollHeight;
     return wrap;
+  }
+
+  function postChat() {
+    return fetch(completionsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'talkie-1930-13b-it',
+        messages: messages,
+        max_tokens: 512,
+        temperature: 0.78
+      })
+    });
+  }
+
+  function isModelWarming503(res, data) {
+    if (res.status !== 503) return false;
+    var em = data && data.error && data.error.message;
+    return em === 'model not loaded yet';
   }
 
   async function send() {
@@ -340,20 +460,18 @@
 
     const pendingEl = appendTurn('assistant', 'The wires warm; awaiting a reply…', true);
     var waitTimerId = startWaitTimer(pendingEl);
+    var progressPollId = startProgressPoll(pendingEl, healthUrl);
     log.setAttribute('aria-busy', 'true');
 
     try {
-      const res = await fetch(completionsUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'talkie-1930-13b-it',
-          messages: messages,
-          max_tokens: 512,
-          temperature: 0.78
-        })
-      });
-      const data = await res.json().catch(function () { return {}; });
+      var res = await postChat();
+      var data = await res.json().catch(function () { return {}; });
+      var coldDeadline = Date.now() + 15 * 60 * 1000;
+      while (isModelWarming503(res, data) && Date.now() < coldDeadline) {
+        await new Promise(function (resolve) { setTimeout(resolve, 1600); });
+        res = await postChat();
+        data = await res.json().catch(function () { return {}; });
+      }
       if (!res.ok) {
         var detail = (data.detail || data.error || data.message);
         if (typeof detail === 'object' && detail !== null && detail.message)
@@ -366,6 +484,8 @@
       reply = String(reply).trim();
       messages.push({ role: 'assistant', content: reply });
       pendingEl.classList.remove('pending');
+      var loadMeter = pendingEl.querySelector('.load-meter');
+      if (loadMeter) loadMeter.remove();
       pendingEl.querySelector('.body').textContent = reply;
 
       var usage = data.usage;
@@ -382,6 +502,7 @@
       showErr(e.message || 'A fault on the line.');
     } finally {
       if (waitTimerId) clearInterval(waitTimerId);
+      if (progressPollId) clearInterval(progressPollId);
       log.setAttribute('aria-busy', 'false');
       btn.disabled = false;
       msg.disabled = false;

@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from talkie.load_progress import update
 from talkie.sampling import apply_top_k_top_p, sample_gumbel
 
 logger = logging.getLogger(__name__)
@@ -396,6 +397,7 @@ def load_checkpoint(
     **one block** plus embeddings (fits Cloud Run 32 GiB). Requires
     ``bitsandbytes`` and CUDA.
     """
+    update("parse_ckpt", "Reading checkpoint from disk")
     ckpt_obj = _safe_torch_load(checkpoint_path)
     if isinstance(ckpt_obj, dict):
         if "model_state_dict" in ckpt_obj:
@@ -436,6 +438,12 @@ def load_checkpoint(
             )
 
         n_layer = config.n_layer
+        update(
+            "nf4_blocks",
+            "Streaming transformer blocks to GPU",
+            step=0,
+            total=n_layer,
+        )
         for i in range(n_layer):
             prefix = f"blocks.{i}."
             sub = {
@@ -455,14 +463,25 @@ def load_checkpoint(
             model.blocks[i] = blk
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-            if (i + 1) % 4 == 0:
-                logger.info("NF4: streamed blocks %d/%d", i + 1, n_layer)
+            logger.info("NF4: streamed block %d/%d", i + 1, n_layer)
+            update(
+                "nf4_blocks",
+                f"GPU block {i + 1} of {n_layer}",
+                step=i + 1,
+                total=n_layer,
+            )
 
         if state_dict:
             raise ValueError(
                 f"Unused checkpoint keys after NF4 stream (sample): {list(state_dict.keys())[:8]}"
             )
 
+        update(
+            "nf4_finalize",
+            "Moving embeddings and rope to GPU",
+            step=n_layer,
+            total=n_layer,
+        )
         _parameters_to_bfloat16_one_by_one(model)
         _nf4_move_embeddings_and_rope_to_gpu(model, device)
         model.eval()
@@ -471,6 +490,7 @@ def load_checkpoint(
     if quantization != "none":
         raise ValueError(f"Unknown quantization mode: {quantization!r}")
 
+    update("bf16_cpu", "Loading weights into memory")
     cpu = torch.device("cpu")
     model = TalkieModel(config, cpu)
     model.load_state_dict(state_dict, strict=True)
@@ -480,6 +500,7 @@ def load_checkpoint(
     if target_vocab_size is not None and ckpt_vocab_size < target_vocab_size:
         model = resize_model_embeddings(model, target_vocab_size, cpu)
 
+    update("bf16_device", "Moving weights to accelerator")
     model = model.to(dtype=torch.bfloat16).to(device)
     model.device = device
     model.eval()

@@ -79,6 +79,34 @@ def health() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@app.get("/v1/gpu/health")
+async def gpu_health_proxy() -> Response:
+    """Forward to GPU /health so the chat page can show load progress (same-origin)."""
+    base = os.environ.get("TALKIE_UPSTREAM_URL", "").strip().rstrip("/")
+    if not base:
+        return JSONResponse(
+            {"status": "unconfigured", "detail": "TALKIE_UPSTREAM_URL not set on this site"},
+            status_code=503,
+        )
+    headers: dict[str, str] = {}
+    auth_h = _upstream_auth_headers(base)
+    if auth_h:
+        headers.update(auth_h)
+    url = f"{base}/health"
+    timeout = httpx.Timeout(connect=20.0, read=20.0, write=20.0, pool=20.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            r = await client.get(url, headers=headers)
+        except httpx.RequestError as e:
+            logger.exception("Upstream health failed")
+            raise HTTPException(status_code=502, detail=f"The line failed: {e!s}") from e
+    return Response(
+        content=r.content,
+        status_code=r.status_code,
+        media_type=r.headers.get("content-type", "application/json"),
+    )
+
+
 @app.head("/health")
 def health_head() -> Response:
     return Response(status_code=200)

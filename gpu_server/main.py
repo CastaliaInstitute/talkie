@@ -72,13 +72,26 @@ app = FastAPI(title="Talkie GPU API", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health", response_model=None)
 def health():
+    from talkie.load_progress import snapshot as load_progress_snapshot
+
     if _load_error is not None:
         return JSONResponse(
-            {"status": "error", "detail": _load_error[:500]},
+            {
+                "status": "error",
+                "detail": _load_error[:500],
+                "progress": load_progress_snapshot(),
+            },
             status_code=503,
         )
     if _talker is None:
-        return JSONResponse({"status": "loading"}, status_code=503)
+        return JSONResponse(
+            {
+                "status": "loading",
+                "model": MODEL_NAME,
+                "progress": load_progress_snapshot(),
+            },
+            status_code=503,
+        )
     return {"status": "ok", "model": MODEL_NAME}
 
 
