@@ -105,6 +105,15 @@
       color: var(--ink-soft);
       text-indent: 0;
     }
+    .turn.pending .wait-elapsed {
+      font-variant-numeric: tabular-nums;
+      color: var(--rule);
+      animation: wait-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes wait-pulse {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
     .composer {
       border-top: double 3px var(--rule);
       padding: 1rem 1.25rem 1.25rem;
@@ -273,6 +282,24 @@
     err.classList.remove('visible');
   }
 
+  function fmtElapsed(totalSec) {
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function startWaitTimer(pendingEl) {
+    var elapsedSpan = pendingEl.querySelector('.wait-elapsed');
+    if (!elapsedSpan) return null;
+    var start = Date.now();
+    function tick() {
+      var sec = Math.floor((Date.now() - start) / 1000);
+      elapsedSpan.textContent = ' · ' + fmtElapsed(sec);
+    }
+    tick();
+    return setInterval(tick, 1000);
+  }
+
   function appendTurn(role, text, pending) {
     const wrap = document.createElement('div');
     wrap.className = 'turn ' + role + (pending ? ' pending' : '');
@@ -281,7 +308,18 @@
     lab.textContent = role === 'user' ? 'From your desk' : 'From the instrument';
     const body = document.createElement('p');
     body.className = 'body';
-    body.textContent = text;
+    if (pending && role === 'assistant') {
+      const copy = document.createElement('span');
+      copy.className = 'wait-copy';
+      copy.textContent = text;
+      const elapsedSpan = document.createElement('span');
+      elapsedSpan.className = 'wait-elapsed';
+      elapsedSpan.textContent = ' · 0:00';
+      body.appendChild(copy);
+      body.appendChild(elapsedSpan);
+    } else {
+      body.textContent = text;
+    }
     wrap.appendChild(lab);
     wrap.appendChild(body);
     log.appendChild(wrap);
@@ -301,6 +339,8 @@
     msg.value = '';
 
     const pendingEl = appendTurn('assistant', 'The wires warm; awaiting a reply…', true);
+    var waitTimerId = startWaitTimer(pendingEl);
+    log.setAttribute('aria-busy', 'true');
 
     try {
       const res = await fetch(completionsUrl, {
@@ -341,6 +381,8 @@
       pendingEl.remove();
       showErr(e.message || 'A fault on the line.');
     } finally {
+      if (waitTimerId) clearInterval(waitTimerId);
+      log.setAttribute('aria-busy', 'false');
       btn.disabled = false;
       msg.disabled = false;
       msg.focus();

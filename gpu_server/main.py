@@ -28,7 +28,9 @@ DEVICE = os.environ.get("TALKIE_DEVICE") or None
 
 _talker: Talkie | None = None
 _load_error: str | None = None
-_executor = ThreadPoolExecutor(max_workers=1)
+# Separate pools so a long model load never queues behind chat work (or vice versa).
+_load_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="talkie_load")
+_chat_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="talkie_chat")
 
 
 def _load_model() -> Talkie:
@@ -47,7 +49,7 @@ async def _load_model_task() -> None:
     global _talker, _load_error
     try:
         loop = asyncio.get_running_loop()
-        _talker = await loop.run_in_executor(_executor, _load_model)
+        _talker = await loop.run_in_executor(_load_executor, _load_model)
         logger.warning("Talkie model ready.")
     except Exception as e:
         _load_error = str(e)[:2000]
@@ -105,7 +107,16 @@ async def chat_completions(request: Request):
         )
     if _talker is None:
         return JSONResponse(
-            {"error": {"message": "model not loaded yet"}},
+            {
+                "error": {
+                    "message": "model not loaded yet",
+                    "hint": (
+                        "First GPU cold start downloads weights and streams NF4 layers (often several minutes). "
+                        "If this never clears, check Cloud Run talkie-gpu logs for OOM (signal 9) and set "
+                        "HF_TOKEN or HUGGING_FACE_HUB_TOKEN for reliable Hub downloads."
+                    ),
+                }
+            },
             status_code=503,
         )
 
@@ -154,7 +165,7 @@ async def chat_completions(request: Request):
         return result, prompt_tokens
 
     try:
-        result, prompt_tokens = await loop.run_in_executor(_executor, _complete)
+        result, prompt_tokens = await loop.run_in_executor(_chat_executor, _complete)
     except ValueError as e:
         return JSONResponse({"error": {"message": str(e)}}, status_code=400)
     completion_tokens = result.token_count
